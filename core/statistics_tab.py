@@ -10,8 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from PySide6.QtCore import Qt, QRect
 from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics
 
-from core.signal_bus import SignalBus
-from core.config import Config
+from core import config, signal_bus
 from core.styles import get_button_style
 
 
@@ -108,8 +107,7 @@ class SimpleChartWidget(QWidget):
         self.chart_type = chart_type
         self.data = {}
         self.hover_index = -1
-        self.config = Config()
-        self.theme = self.config.theme
+        self.theme = config.theme
         
         # 获取主题颜色
         self.colors, self.text_color, self.bg_color = ChartColors.get_theme_colors(self.theme)
@@ -760,9 +758,7 @@ class StatisticsTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("statistics_tab")
-        self.config = Config()
-        self.signal_bus = SignalBus()
-        self.current_user = self.config.current_user
+        self.current_user = config.get_current_user()
         self.base_achievements = []
         self.user_progress = {}
         self.merged_achievements = []
@@ -773,8 +769,8 @@ class StatisticsTab(QWidget):
         self.init_ui()
         
         # 监听用户切换信号
-        self.signal_bus.user_switched.connect(self.on_user_switched)
-        self.signal_bus.theme_changed.connect(self.on_theme_changed)
+        signal_bus.user_switched.connect(self.on_user_switched)
+        signal_bus.theme_changed.connect(self.on_theme_changed)
         
         # 直接加载数据
         self.load_data()
@@ -904,7 +900,10 @@ class StatisticsTab(QWidget):
         layout.addLayout(charts_layout)
         
         # 应用按钮样式
-        self.refresh_btn.setStyleSheet(get_button_style(self.config.theme))
+        self.refresh_btn.setStyleSheet(get_button_style(config.theme))
+        
+        # 初始化用户列表
+        self._update_user_list()
         
         self.setLayout(layout)
     
@@ -921,13 +920,11 @@ class StatisticsTab(QWidget):
         """加载数据"""
         try:
             # 加载基础成就数据
-            self.base_achievements = self.config.load_base_achievements()
-            print(f"[DEBUG] 加载了 {len(self.base_achievements)} 个基础成就")
+            self.base_achievements = config.load_base_achievements()
             
             # 加载用户进度数据
             if self.current_user:
-                self.user_progress = self.config.load_user_progress(self.current_user)
-                print(f"[DEBUG] 加载了用户 {self.current_user} 的进度数据")
+                self.user_progress = config.load_user_progress(self.current_user)
             else:
                 self.user_progress = {}
             
@@ -947,7 +944,7 @@ class StatisticsTab(QWidget):
         # 创建基础成就的字典副本
         merged_dict = {}
         for achievement in self.base_achievements:
-            key = achievement.get('id', '')
+            key = achievement.get('编号', '')  # 使用"编号"字段而不是"id"
             if key:
                 merged_dict[key] = achievement.copy()
         
@@ -957,7 +954,6 @@ class StatisticsTab(QWidget):
                 merged_dict[key].update(value)
         
         self.merged_achievements = list(merged_dict.values())
-        print(f"[DEBUG] 合并后有 {len(self.merged_achievements)} 个成就")
     
     def calculate_statistics(self, achievements, version_filter='全部'):
         """计算统计数据"""
@@ -1158,7 +1154,7 @@ class StatisticsTab(QWidget):
     
     def _update_user_list_without_signal(self):
         """更新用户列表（不触发信号）"""
-        users = self.config.get_users()
+        users = config.get_users()
         
         # 临时断开信号连接
         self.user_combo.blockSignals(True)
