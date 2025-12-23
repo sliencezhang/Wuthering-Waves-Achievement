@@ -123,12 +123,17 @@ class TemplateMainWindow(QMainWindow):
         from core.manage_tab import ManageTab
         self.manage_tab = ManageTab()
         self.tab_widget.addTab(self.manage_tab, "🏆 成就管理")
+
+        # 添加统计信息标签页
+        from core.statistics_tab import StatisticsTab
+        self.statistics_tab = StatisticsTab()
+        self.tab_widget.addTab(self.statistics_tab, "📈 统计图表")
         
         # 添加数据爬取标签页
         from core.crawl_tab import CrawlTab
         self.crawl_tab = CrawlTab()
         self.tab_widget.addTab(self.crawl_tab, "📊 数据爬取")
-        
+
         # 应用滚动条样式到标签页
         from core.styles import get_scrollbar_style
         self.tab_widget.setStyleSheet(self.tab_widget.styleSheet() + get_scrollbar_style(config.theme))
