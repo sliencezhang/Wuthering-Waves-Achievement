@@ -743,6 +743,9 @@ class TemplateSettingsDialog(QDialog):
         layout.addLayout(categories_layout)
         layout.addStretch()  # 添加弹性空间
         
+        # 初始化第二分类缓存
+        self._second_categories_cache = category_config.get("second_categories", {}).copy()
+        
         # 初始加载第二分类
         if first_categories:
             self._load_second_categories()
@@ -930,26 +933,23 @@ class TemplateSettingsDialog(QDialog):
                         CustomMessageBox.warning(self, "错误", f"分类 '{name}' 的排序必须是数字")
                         return
         
-        # 收集第二分类数据（过滤空白行）
-        second_categories = {}
+        # 先保存当前正在编辑的第二分类数据到缓存
         current_first = self.first_category_combo.currentText()
-        second_categories[current_first] = {}
+        self._save_current_second_categories_to_cache(current_first)
         
-        for row in range(self.second_category_table.rowCount()):
-            name_item = self.second_category_table.item(row, 0)
-            suffix_item = self.second_category_table.item(row, 1)
-            
-            if name_item and suffix_item:
-                name = name_item.text().strip()
-                suffix = suffix_item.text().strip()
-                
-                if name and suffix:  # 只保存非空行
-                    second_categories[current_first][name] = suffix
+        # 使用缓存中的所有第二分类数据
+        all_second_categories = {}
+        if hasattr(self, '_second_categories_cache'):
+            all_second_categories = self._second_categories_cache.copy()
+        else:
+            # 如果缓存不存在，从配置文件加载
+            category_config = config.load_category_config()
+            all_second_categories = category_config.get("second_categories", {})
         
         # 保存配置
         updated_config = {
             "first_categories": first_categories,
-            "second_categories": second_categories
+            "second_categories": all_second_categories
         }
         
         if config.save_category_config(updated_config):
