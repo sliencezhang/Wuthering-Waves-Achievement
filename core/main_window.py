@@ -43,6 +43,10 @@ class TemplateMainWindow(QMainWindow):
         # 连接数据共享信号
         self.setup_data_sharing()
         
+        # 检查是否首次运行
+        if config.first_run:
+            self.show_first_run_dialog()
+        
         # 启动时检查更新（后台进行）
         self.setup_update_check()
 
@@ -386,6 +390,120 @@ class TemplateMainWindow(QMainWindow):
         if hasattr(self, 'manage_tab') and hasattr(self.manage_tab, 'load_local_data'):
             self.manage_tab.load_local_data()
             print("[INFO] 成就管理数据已重新加载")
+
+    def show_first_run_dialog(self):
+        """显示首次运行欢迎对话框"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit
+        from PySide6.QtCore import Qt
+        from core.styles import get_dialog_style, get_scrollbar_style
+        from core.widgets import BackgroundWidget, load_background_image
+        from core.custom_title_bar import CustomTitleBar
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("欢迎使用鸣潮成就管理器")
+        dialog.setFixedSize(600, 500)
+        dialog.setModal(False)  # 设置为非模态，允许主窗口同时显示
+        
+        # 设置无边框窗口和透明背景以实现圆角
+        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        dialog.setStyleSheet(get_dialog_style(config.theme))
+
+        # 背景图片初始化
+        background_pixmap = load_background_image(config.theme)
+        
+        # 创建主布局（透明）
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # 创建容器（用于绘制背景）
+        container_widget = BackgroundWidget(background_pixmap, config.theme)
+        container_widget.setObjectName("dialogContainer")
+        container_layout = QVBoxLayout(container_widget)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        main_layout.addWidget(container_widget)
+        
+        # 添加自定义标题栏（不显示主题切换按钮）
+        title_bar = CustomTitleBar(dialog, show_theme_toggle=False)
+        container_layout.addWidget(title_bar)
+        
+        # 内容区域
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
+        container_layout.addWidget(content_widget)
+        
+        layout.setSpacing(15)
+        
+        # 标题
+        title_label = QLabel("🎊 欢迎使用鸣潮成就管理器！")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db; margin: 10px;")
+        layout.addWidget(title_label)
+        
+        # 说明文本 - 使用QLabel和HTML格式，与帮助对话框保持一致
+        info_text = QLabel()
+        info_text.setWordWrap(True)
+        info_text.setTextFormat(Qt.TextFormat.RichText)
+        info_text.setOpenExternalLinks(True)
+        info_text.setText("""
+        <p><b>📖 快速入门指南：</b></p>
+        <p style='margin-left: 20px;'>1. <b>添加用户</b>：首先需要在设置中添加您的游戏昵称和uid</p>
+        <p style='margin-left: 20px;'>2. <b>设置认证信息</b>：在设置-用户管理-通用认证设置查看如何设置</p>
+        <p style='margin-left: 20px;'>3. <b>数据爬取</b>：输入版本号爬取对应版本的成就数据</p>
+        <p style='margin-left: 20px;'>4. <b>管理成就</b>：在成就管理中查看和标记您的成就进度</p>
+        
+        <p><b>💡 使用提示：</b></p>
+        <p style='margin-left: 20px;'>• 点击左上角头像可以切换角色形象</p>
+        <p style='margin-left: 20px;'>• 设置→分类管理可以自定义分类排序</p>
+        <p style='margin-left: 20px;'>• 所有数据都保存在本地，安全可靠</p>
+        
+        <p><b>❓ 需要帮助？</b></p>
+        <p style='margin-left: 20px;'>点击右下角"帮助"按钮查看详细使用说明</p>
+        """)
+        layout.addWidget(info_text)
+        
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        help_btn = QPushButton("查看帮助")
+        help_btn.clicked.connect(lambda: self.show_help_dialog())
+        help_btn.setMinimumWidth(100)
+        
+        ok_btn = QPushButton("开始使用")
+        ok_btn.clicked.connect(dialog.accept)
+        ok_btn.setMinimumWidth(100)
+        ok_btn.setDefault(True)
+        
+        button_layout.addWidget(help_btn)
+        button_layout.addWidget(ok_btn)
+        layout.addLayout(button_layout)
+        
+        # 应用样式
+        from core.styles import get_button_style
+        help_btn.setStyleSheet(get_button_style(config.theme))
+        ok_btn.setStyleSheet(get_button_style(config.theme))
+        
+        # 应用帮助文本样式
+        from core.styles import get_help_text_style
+        info_text.setStyleSheet(get_help_text_style(config.theme))
+        
+        # 显示对话框（非阻塞）
+        dialog.show()
+        
+        # 保存配置，标记不是首次运行
+        config.save_config()
+        
+        # 对话框关闭时自动删除
+        dialog.finished.connect(lambda: dialog.deleteLater())
+    
+    def show_help_dialog(self):
+        """显示帮助对话框"""
+        from core.help_dialog import HelpDialog
+        help_dialog = HelpDialog(self)
+        help_dialog.exec()
 
     def closeEvent(self, event):
             """窗口关闭事件"""
