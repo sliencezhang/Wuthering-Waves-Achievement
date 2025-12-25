@@ -8,6 +8,7 @@ class SignalBus(QObject):
     settings_changed = Signal(dict)  # 设置变更信号
     user_switched = Signal(str)  # 用户切换信号
     theme_changed = Signal(str)  # 主题切换信号
+    category_config_updated = Signal()  # 分类配置更新信号
     
     # 爬虫相关信号
     crawl_started = Signal()  # 开始爬取
