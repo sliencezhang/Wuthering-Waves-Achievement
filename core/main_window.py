@@ -161,6 +161,7 @@ class TemplateMainWindow(QMainWindow):
         # 连接信号
         signal_bus.settings_changed.connect(self.on_settings_saved)
         signal_bus.theme_changed.connect(self.apply_theme)
+        signal_bus.category_config_updated.connect(self.on_category_config_updated)
         
         # 初始化头像和昵称显示
         self.update_nickname_display()
@@ -378,6 +379,13 @@ class TemplateMainWindow(QMainWindow):
         if dialog.exec() == QDialog.Accepted:
             # 用户点击了确认，密码已复制，链接已打开
             pass
+    
+    def on_category_config_updated(self):
+        """处理分类配置更新"""
+        # 重新加载成就管理标签页的数据
+        if hasattr(self, 'manage_tab') and hasattr(self.manage_tab, 'load_local_data'):
+            self.manage_tab.load_local_data()
+            print("[INFO] 成就管理数据已重新加载")
 
     def closeEvent(self, event):
             """窗口关闭事件"""
