@@ -124,17 +124,94 @@ class AchievementCrawler(QObject):
                 if '「隐藏成就」' in name_text:
                     name_text = name_text.replace('「隐藏成就」', '').strip()
 
+                # 从data-filter-tag属性中获取分类信息
+                filter_tag = row.get('data-filter-tag', '')
+                categories = []
+                if filter_tag:
+                    # 分割filter_tag获取分类信息
+                    tags = filter_tag.split(',')
+                    for tag in tags:
+                        if tag.startswith('合集-'):
+                            category = tag[3:]  # 去掉'合集-'前缀
+                            categories.append(category)
+                
+                # 使用合集作为第二分类
+                second_category = categories[0] if categories else self.clean_text(cells[2].get_text(strip=True))
+                
                 achievement = {
                     '名称': name_text,
                     '版本': self.clean_text(cells[1].get_text(strip=True)),
-                    '第二分类': self.clean_text(cells[2].get_text(strip=True)),
+                    '第一分类': '',  # 第一分类需要后续推断
+                    '第二分类': second_category,
                     '描述': self.clean_text(cells[3].get_text(strip=True)),
                     '奖励': self.clean_text(cells[4].get_text(strip=True)),
                     '是否隐藏': '隐藏' if is_hidden else ''
                 }
                 achievements.append(achievement)
         return achievements
-
+    
+    def parse_html_table_with_categories(self, html_content):
+                """解析包含折叠分类结构的HTML表格"""
+                achievements = []
+                soup = BeautifulSoup(html_content, 'html.parser')
+                
+                # 查找所有的details标签
+                details_list = soup.find_all('details', class_='kr-collapse-details')
+                
+                for details in details_list:
+                    # 获取第一分类名称
+                    summary = details.find('summary', class_='kr-collapse-summary')
+                    if summary:
+                        first_category = self.clean_text(summary.get_text(strip=True))
+                    else:
+                        first_category = ''
+                    
+                    # 在details内查找表格
+                    table = details.find('table', class_='kr-table-filter')
+                    if not table:
+                        continue
+                        
+                    # 查找表格中的所有行
+                    rows = table.find_all('tr')
+                    
+                    # 跳过表头行
+                    for row in rows[1:]:
+                        cells = row.find_all('td')
+                        if len(cells) >= 5:
+                            name_text = self.clean_text(cells[0].get_text(strip=True))
+                            is_hidden = '隐藏成就' in name_text
+        
+                            if '「隐藏成就」' in name_text:
+                                name_text = name_text.replace('「隐藏成就」', '').strip()
+        
+                            # 从data-filter-tag属性中获取分类信息
+                            filter_tag = row.get('data-filter-tag', '')
+                            second_category = ''
+                            if filter_tag:
+                                # 分割filter_tag获取分类信息
+                                tags = filter_tag.split(',')
+                                for tag in tags:
+                                    if tag.startswith('合集-'):
+                                        second_category = tag[3:]  # 去掉'合集-'前缀
+                                        break
+                            
+                            # 如果没有从filter-tag获取到，使用第三列
+                            if not second_category and len(cells) > 2:
+                                second_category = self.clean_text(cells[2].get_text(strip=True))
+        
+                            achievement = {
+                                '名称': name_text,
+                                '版本': self.clean_text(cells[1].get_text(strip=True)),
+                                '第一分类': first_category,
+                                '第二分类': second_category,
+                                '描述': self.clean_text(cells[3].get_text(strip=True)),
+                                '奖励': self.clean_text(cells[4].get_text(strip=True)),
+                                '是否隐藏': '隐藏' if is_hidden else ''
+                            }
+                            achievements.append(achievement)
+                
+                return achievements
+    
     def parse_achievements_data(self, api_data, target_version=None):
         achievements = []
         try:
@@ -146,23 +223,8 @@ class AchievementCrawler(QObject):
                 for component in components:
                     if component.get('type') == 'filter-component':
                         html_content = component.get('content', '')
-                        parsed = self.parse_html_table(html_content)
+                        parsed = self.parse_html_table_with_categories(html_content)
                         achievements.extend(parsed)
-
-            # 添加分类信息和其他字段
-            for achievement in achievements:
-                second_category = achievement.get('第二分类', '')
-                first_category = self.first_category_map.get(second_category, "未知分类")
-                achievement['第一分类'] = first_category
-
-            # 再次过滤掉未知分类的数据（双重保险）
-            achievements = [a for a in achievements if a.get('第一分类') != '未知分类']
-            
-            # 填充编号（内部已包含排序）
-            achievements = self.fill_serial_numbers(achievements)
-
-            # 再次过滤掉未知分类的数据（双重保险）
-            achievements = [a for a in achievements if a.get('第一分类') != '未知分类']
             
             print(f"[DEBUG] 过滤后剩余 {len(achievements)} 条成就数据")
 
@@ -700,96 +762,102 @@ class CrawlTab(QWidget):
         first_categories = category_config.get("first_categories", {})
         second_categories = category_config.get("second_categories", {})
         
-        # 为新成就按规则生成编号
-        # 先统计每个分类下已有的最大序号
-        category_max_nums = {}
-        for achievement in current_achievements:
+        # 复制一份配置用于更新
+        updated_first_categories = first_categories.copy()
+        updated_second_categories = {}
+        for key, value in second_categories.items():
+            updated_second_categories[key] = value.copy()
+        
+        # 标记是否有新的分类需要保存
+        has_new_categories = False
+        
+        # 检查新成就中是否有新的分类
+        for achievement in to_add:
             first_cat = achievement.get('第一分类', '')
             second_cat = achievement.get('第二分类', '')
-            serial_num = achievement.get('编号', '')
             
-            if first_cat and second_cat and serial_num and len(serial_num) >= 8:
-                # 提取序号部分（后4位）
-                try:
-                    seq_num = int(serial_num[-4:])
-                    category_key = (first_cat, second_cat)
-                    category_max_nums[category_key] = max(category_max_nums.get(category_key, 0), seq_num)
-                except:
-                    pass
+            if first_cat and second_cat:
+                # 智能处理第一分类（如果不存在则分配新排序）
+                if first_cat not in updated_first_categories:
+                    max_order = max(updated_first_categories.values()) if updated_first_categories else 0
+                    updated_first_categories[first_cat] = max_order + 1
+                    updated_second_categories[first_cat] = {}
+                    has_new_categories = True
+                    print(f"[INFO] 发现新第一分类 '{first_cat}'，分配排序: {max_order + 1}")
+                
+                # 智能处理第二分类（如果不存在则分配新后缀）
+                if first_cat not in updated_second_categories:
+                    updated_second_categories[first_cat] = {}
+                
+                if second_cat not in updated_second_categories[first_cat]:
+                    # 找到该第一分类下最小的未使用后缀
+                    existing_suffixes = set()
+                    for suffix in updated_second_categories[first_cat].values():
+                        try:
+                            existing_suffixes.add(int(suffix))
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    new_suffix = 10
+                    while new_suffix in existing_suffixes:
+                        new_suffix += 10
+                    
+                    updated_second_categories[first_cat][second_cat] = str(new_suffix)
+                    has_new_categories = True
+                    print(f"[INFO] 发现新第二分类 '{first_cat} - {second_cat}'，分配后缀: {new_suffix}")
         
-            # 为新成就生成编号
-            for achievement in to_add:
-                first_cat = achievement.get('第一分类', '')
-                second_cat = achievement.get('第二分类', '')
-                
-                if not first_cat or not second_cat:
-                    achievement['serial_number'] = ''
-                    continue
-                
-                # 获取第一分类排序号
-                first_category_order = first_categories.get(first_cat, 1)
-                
-                # 获取第二分类后缀
-                suffix = second_categories.get(first_cat, {}).get(second_cat, '10')
-                
-                # 生成完整前缀：第一分类(1位) + 第二分类后缀(补齐到3位)
-                suffix_padded = f"{int(suffix):03d}"
-                full_prefix = f"{first_category_order}{suffix_padded}"
-                
-                # 获取当前分类的下一个序号
-                category_key = (first_cat, second_cat)
-                next_num = category_max_nums.get(category_key, 0) + 1
-                
-                # 生成编号：4位分类码 + 4位序号
-                achievement['serial_number'] = f"{full_prefix}{next_num:04d}"
-                
-                # 更新最大序号
-                category_max_nums[category_key] = next_num        
-        # 合并数据：现有成就 + 新增的成就
+        # 先保存新的分类配置（如果有新分类）
+        if has_new_categories:
+            updated_config = {
+                "first_categories": updated_first_categories,
+                "second_categories": updated_second_categories
+            }
+            config.save_category_config(updated_config)
+            print("[INFO] 已更新分类配置，新增的分类已自动分配排序和后缀")        # 合并数据：现有成就 + 新增的成就
         all_achievements = current_achievements + to_add
         
-        # 按照规则排序
-        def get_sort_key(achievement):
-            """获取排序键"""
-            # 第一分类排序
-            first_cat = achievement.get('第一分类', '')
-            first_order = first_categories.get(first_cat, 999)
-            
-            # 第二分类排序
-            second_cat = achievement.get('第二分类', '')
-            first_cat_second = second_categories.get(first_cat, {})
-            second_order = int(first_cat_second.get(second_cat, 999)) if second_cat in first_cat_second else 999
-            
-            # 版本号排序（浮点型正序）
-            version_str = achievement.get('版本', '0.0')
-            try:
-                version = float(version_str)
-            except ValueError:
-                version = 0.0
-            
-            # 编号（用于保持相对稳定）
-            serial_number = achievement.get('serial_number', '99999999')
-            
-            return (first_order, second_order, version, serial_number)
-        
-        # 排序
-        all_achievements = sorted(all_achievements, key=get_sort_key)
-        
-        # 重新生成绝对编号（按最终排序顺序从1开始递增）
-        for index, achievement in enumerate(all_achievements, start=1):
-            achievement['绝对编号'] = str(index)
+        # 使用ManageTab的智能重新编码方法来重新生成编号和绝对编号
+        all_achievements = manage_tab._smart_reencode_achievements(all_achievements)
         
         # 直接更新管理器的数据，而不是调用load_data
         manage_tab.manager.achievements = all_achievements
         manage_tab.manager.filtered_achievements = all_achievements.copy()
         
+        # 重新编码所有用户的存档数据，确保编号同步
+        print("[INFO] 正在重新编码用户存档数据...")
+        if config.reencode_all_user_progress():
+            print("[SUCCESS] 用户存档数据已同步更新")
+        else:
+            print("[ERROR] 用户存档数据更新失败")
+        
+        # 发送分类配置更新信号（如果有新分类）
+        if has_new_categories:
+            from core.signal_bus import signal_bus
+            signal_bus.category_config_updated.emit()
+        
         print(f"[SUCCESS] 已新增 {len(to_add)} 条成就，总计 {len(all_achievements)} 条成就数据")
         
-        # 添加右上角自动关闭的提示
-        self.show_notification(f"成功新增 {len(to_add)} 条成就，总计 {len(all_achievements)} 条成就数据")
+        # 显示多个通知
+        if has_new_categories:
+            # 先显示新分类通知
+            self.show_notification("发现新分类，已自动分配排序。建议到设置→分类管理中手动调整顺序。")
+            # 延迟0.5秒后显示成功通知
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(500, lambda: self.show_notification(f"成功新增 {len(to_add)} 条成就，总计 {len(all_achievements)} 条成就数据"))
+        else:
+            # 没有新分类时直接显示成功通知
+            self.show_notification(f"成功新增 {len(to_add)} 条成就，总计 {len(all_achievements)} 条成就数据")
         
-        # 更新表格显示
+        # 更新爬虫页面的表格显示
         manage_tab.manager_table.load_data(all_achievements)
+        
+        # 更新主窗口成就管理页面的数据
+        manage_tab.manager.achievements = all_achievements
+        manage_tab.manager.filtered_achievements = all_achievements.copy()
+        
+        # 更新主窗口成就管理页面的表格
+        if hasattr(manage_tab, 'achievement_table'):
+            manage_tab.achievement_table.load_data(all_achievements)
         
         # 更新筛选器
         manage_tab.update_filters()
@@ -859,18 +927,22 @@ class CrawlTab(QWidget):
             x = screen.width() - notification_width - 20
             y = 60
         
-        notification.move(x, y)
+        # 计算垂直位置，考虑现有通知
+        if not hasattr(self, 'active_notifications'):
+            self.active_notifications = []
+        
+        # 垂直偏移量：每个通知间隔10px
+        vertical_offset = len(self.active_notifications) * 60
+        notification.move(x, y + vertical_offset)
         notification.show()
         
         # 创建淡出定时器
         fade_timer = QTimer()
         fade_timer.setSingleShot(True)
         fade_timer.timeout.connect(lambda: self.fade_out_notification(notification))
-        fade_timer.start(3000)  # 3秒后开始淡出
+        fade_timer.start(6000)  # 6秒后开始淡出
         
         # 存储引用以避免被垃圾回收
-        if not hasattr(self, 'active_notifications'):
-            self.active_notifications = []
         self.active_notifications.append((notification, fade_timer))
     
     def fade_out_notification(self, notification):
@@ -881,10 +953,12 @@ class CrawlTab(QWidget):
         try:
             if notification is None or not notification.isVisible():
                 self._remove_notification_from_list(notification)
+                self._reposition_notifications()
                 return
         except RuntimeError:
             # 对象已被删除
             self._remove_notification_from_list(notification)
+            self._reposition_notifications()
             return
         
         # 创建透明度动画
@@ -905,11 +979,52 @@ class CrawlTab(QWidget):
         
         # 从活动通知列表中移除
         self._remove_notification_from_list(notification)
+        # 重新定位剩余通知
+        self._reposition_notifications()
     
     def _remove_notification_from_list(self, notification):
         """从活动通知列表中移除通知"""
         if hasattr(self, 'active_notifications'):
             self.active_notifications = [(n, t) for n, t in self.active_notifications if n != notification]
+    
+    def _reposition_notifications(self):
+        """重新定位所有活动通知"""
+        if not hasattr(self, 'active_notifications'):
+            return
+            
+        # 获取主窗口位置
+        main_window = None
+        try:
+            from core.main_window import TemplateMainWindow
+            for widget in QApplication.topLevelWidgets():
+                if isinstance(widget, TemplateMainWindow):
+                    main_window = widget
+                    break
+                elif hasattr(widget, 'manage_tab'):
+                    main_window = widget
+                    break
+        except:
+            pass
+        
+        # 计算基础位置
+        if main_window:
+            # 相对于主窗口右上角
+            main_pos = main_window.pos()
+            main_size = main_window.size()
+            x = main_pos.x() + main_size.width() - 320 - 20  # 320是通知宽度
+            y = main_pos.y() + 60
+        else:
+            # 屏幕右上角
+            from PySide6.QtGui import QGuiApplication
+            screen = QGuiApplication.primaryScreen().geometry()
+            x = screen.width() - 320 - 20
+            y = 60
+        
+        # 重新定位每个通知
+        for i, (notification, timer) in enumerate(self.active_notifications):
+            if notification and notification.isVisible():
+                vertical_offset = i * 60
+                notification.move(x, y + vertical_offset)
     
     def open_wiki(self):
         """打开库街区Wiki成就页面"""
