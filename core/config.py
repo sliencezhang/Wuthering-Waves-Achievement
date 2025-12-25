@@ -342,6 +342,122 @@ class Config:
                 }
             }
         }
+    
+    def reencode_all_user_progress(self):
+        """重新编码所有用户的存档数据和基础数据"""
+        try:
+            # 加载基础成就数据
+            base_achievements = self.load_base_achievements()
+            if not base_achievements:
+                print("[ERROR] 基础成就数据为空，无法重新编码")
+                return False
+            
+            # 导入成就管理器来重新编号
+            from core.manage_tab import ManageTab
+            manage_tab = ManageTab()
+            
+            # 先保存原始编号映射（使用成就名称+第一分类+第二分类作为唯一标识）
+            original_mapping = {}
+            for achievement in base_achievements:
+                # 使用成就名称+第一分类+第二分类作为唯一标识
+                name = achievement.get('名称', '')
+                first_cat = achievement.get('第一分类', '')
+                second_cat = achievement.get('第二分类', '')
+                code = achievement.get('编号', '')
+                abs_id = achievement.get('绝对编号', '')
+                
+                if name and first_cat and second_cat and code:
+                    key = f"{name}|{first_cat}|{second_cat}"
+                    original_mapping[key] = {
+                        'code': code,
+                        'abs_id': abs_id
+                    }
+            
+            # 复制一份基础数据用于重新编号
+            import copy
+            achievements_for_reencode = copy.deepcopy(base_achievements)
+            
+            # 使用新的分类配置重新生成编号和绝对编号
+            reencoded_achievements = manage_tab._smart_reencode_achievements(achievements_for_reencode)
+            
+            # 创建编号映射：旧编号 -> 新编号
+            id_mapping = {}
+            # 创建绝对编号映射：旧绝对编号 -> 新绝对编号
+            abs_id_mapping = {}
+            
+            for achievement in reencoded_achievements:
+                # 使用成就名称+第一分类+第二分类查找原始编号
+                name = achievement.get('名称', '')
+                first_cat = achievement.get('第一分类', '')
+                second_cat = achievement.get('第二分类', '')
+                new_id = achievement.get('编号', '')
+                new_abs_id = achievement.get('绝对编号', '')
+                
+                if name and first_cat and second_cat and new_id:
+                    key = f"{name}|{first_cat}|{second_cat}"
+                    original = original_mapping.get(key, {})
+                    old_id = original.get('code', '')
+                    old_abs_id = original.get('abs_id', '')
+                    
+                    if old_id and old_id != new_id:
+                        id_mapping[old_id] = new_id
+                        print(f"[DEBUG] 编号映射: {old_id} -> {new_id}")
+                    
+                    if old_abs_id and old_abs_id != new_abs_id:
+                        abs_id_mapping[old_abs_id] = new_abs_id
+                        print(f"[DEBUG] 绝对编号映射: {old_abs_id} -> {new_abs_id}")
+            
+            # 按绝对编号排序后再保存基础数据
+            sorted_achievements = sorted(reencoded_achievements, key=lambda x: int(x.get('绝对编号', '0')))
+            
+            # 保存重新编码后的基础数据
+            if not self.save_base_achievements(sorted_achievements):
+                print("[ERROR] 保存重新编码后的基础成就数据失败")
+                return False
+            print("[INFO] 基础成就数据已更新")
+            
+            # 获取所有用户
+            users = self.get_users()
+            updated_count = 0
+            
+            # 更新每个用户的进度数据
+            for username in users:
+                # 加载用户进度
+                user_progress = self.load_user_progress(username)
+                
+                if not user_progress:
+                    continue
+                
+                # 创建新的进度数据
+                new_progress = {}
+                
+                # 更新成就进度中的编号
+                for old_id, progress_info in user_progress.items():
+                    # 查找新编号
+                    new_id = id_mapping.get(old_id, old_id)
+                    
+                    # 使用新编号（如果有变化）或保持原编号
+                    new_progress[new_id] = progress_info
+                    
+                    # 如果编号有变化，增加计数
+                    if new_id != old_id:
+                        updated_count += 1
+                
+                # 按编号顺序排序后再保存用户进度
+                sorted_progress = dict(sorted(new_progress.items(), key=lambda x: x[0]))
+                
+                # 保存更新后的进度
+                if self.save_user_progress(username, sorted_progress):
+                    print(f"[INFO] 用户 {username} 的进度数据已更新")
+                else:
+                    print(f"[ERROR] 保存用户 {username} 的进度数据失败")
+            
+            print(f"[INFO] 重新编码完成，共更新 {updated_count} 条记录")
+            return True
+            
+        except Exception as e:
+            print(f"[ERROR] 重新编码用户进度数据失败: {str(e)}")
+            return False
 
 
 # 创建全局配置实例
