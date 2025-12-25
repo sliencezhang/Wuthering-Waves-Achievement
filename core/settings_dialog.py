@@ -5,6 +5,7 @@
 from PySide6.QtCore import Qt
 
 from core.config import config
+from core.draggable_table import DraggableTableWidget
 from core.signal_bus import signal_bus
 from core.styles import (get_dialog_style, get_settings_desc_style, get_button_style)
 from core.custom_message_box import CustomMessageBox
@@ -652,9 +653,9 @@ class TemplateSettingsDialog(QDialog):
         first_layout = QVBoxLayout(first_group)
         
         # 第一分类表格
-        self.first_category_table = QTableWidget()
-        self.first_category_table.setColumnCount(2)
-        self.first_category_table.setHorizontalHeaderLabels(["分类名称", "排序"])
+        self.first_category_table = DraggableTableWidget()
+        self.first_category_table.setColumnCount(1)
+        self.first_category_table.setHorizontalHeaderLabels(["分类名称"])
         self.first_category_table.horizontalHeader().setStretchLastSection(True)
         
         # 应用滚动条样式
@@ -663,10 +664,11 @@ class TemplateSettingsDialog(QDialog):
         
         # 填充第一分类数据
         first_categories = category_config.get("first_categories", {})
-        self.first_category_table.setRowCount(len(first_categories))
-        for i, (name, order) in enumerate(first_categories.items()):
+        # 按排序值排序后显示
+        sorted_categories = sorted(first_categories.items(), key=lambda x: x[1])
+        self.first_category_table.setRowCount(len(sorted_categories))
+        for i, (name, order) in enumerate(sorted_categories):
             self.first_category_table.setItem(i, 0, QTableWidgetItem(name))
-            self.first_category_table.setItem(i, 1, QTableWidgetItem(str(order)))
         
         # 设置表格最小高度
         self.first_category_table.setMinimumHeight(400)
@@ -703,14 +705,10 @@ class TemplateSettingsDialog(QDialog):
         second_layout.addLayout(first_selector_layout)
         
         # 第二分类表格
-        self.second_category_table = QTableWidget()
-        self.second_category_table.setColumnCount(2)
-        self.second_category_table.setHorizontalHeaderLabels(["分类名称", "后缀"])
-        # 设置列宽：分类名称列占70%，后缀列占30%
-        header = self.second_category_table.horizontalHeader()
-        header.setStretchLastSection(False)  # 不自动拉伸最后一列
-        self.second_category_table.setColumnWidth(0, 300)  # 分类名称列宽
-        self.second_category_table.setColumnWidth(1, 100)  # 后缀列宽
+        self.second_category_table = DraggableTableWidget()
+        self.second_category_table.setColumnCount(1)
+        self.second_category_table.setHorizontalHeaderLabels(["分类名称"])
+        self.second_category_table.horizontalHeader().setStretchLastSection(True)
         
         # 应用滚动条样式
         from core.styles import get_scrollbar_style
@@ -750,6 +748,10 @@ class TemplateSettingsDialog(QDialog):
         if first_categories:
             self._load_second_categories()
         
+        # 连接行移动信号
+        self.first_category_table._on_row_moved = lambda table, src, dst: self._on_first_category_row_moved(src, dst)
+        self.second_category_table._on_row_moved = lambda table, src, dst: self._on_second_category_row_moved(src, dst)
+        
         return widget
     
     def _add_first_category_row(self):
@@ -757,17 +759,10 @@ class TemplateSettingsDialog(QDialog):
         row = self.first_category_table.rowCount()
         self.first_category_table.insertRow(row)
         
-        # 智能计算下一个排序号
-        next_order = self._get_next_first_category_order()
-        
         # 添加可编辑的项目
         name_item = QTableWidgetItem("")
         name_item.setFlags(name_item.flags() | Qt.ItemFlag.ItemIsEditable)
         self.first_category_table.setItem(row, 0, name_item)
-        
-        order_item = QTableWidgetItem(str(next_order))
-        order_item.setFlags(order_item.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.first_category_table.setItem(row, 1, order_item)
         
         # 自动选中新行的第一个单元格
         self.first_category_table.setCurrentCell(row, 0)
@@ -794,17 +789,10 @@ class TemplateSettingsDialog(QDialog):
         row = self.second_category_table.rowCount()
         self.second_category_table.insertRow(row)
         
-        # 智能计算下一个后缀
-        next_suffix = self._get_next_second_category_suffix()
-        
         # 添加可编辑的项目
         name_item = QTableWidgetItem("")
         name_item.setFlags(name_item.flags() | Qt.ItemFlag.ItemIsEditable)
         self.second_category_table.setItem(row, 0, name_item)
-        
-        suffix_item = QTableWidgetItem(str(next_suffix))
-        suffix_item.setFlags(suffix_item.flags() | Qt.ItemFlag.ItemIsEditable)
-        self.second_category_table.setItem(row, 1, suffix_item)
         
         # 自动选中新行的第一个单元格
         self.second_category_table.setCurrentCell(row, 0)
@@ -845,10 +833,11 @@ class TemplateSettingsDialog(QDialog):
             self._second_categories_cache[first_category] = second_categories.copy()
         
         # 清空表格并加载数据
-        self.second_category_table.setRowCount(len(second_categories))
-        for i, (name, suffix) in enumerate(second_categories.items()):
+        # 按后缀值排序后显示
+        sorted_categories = sorted(second_categories.items(), key=lambda x: int(x[1]))
+        self.second_category_table.setRowCount(len(sorted_categories))
+        for i, (name, suffix) in enumerate(sorted_categories):
             self.second_category_table.setItem(i, 0, QTableWidgetItem(name))
-            self.second_category_table.setItem(i, 1, QTableWidgetItem(suffix))
     
     def _save_current_second_categories_to_cache(self, first_category):
         """保存当前第二分类数据到缓存"""
@@ -858,13 +847,13 @@ class TemplateSettingsDialog(QDialog):
         second_cats = {}
         for row in range(self.second_category_table.rowCount()):
             name_item = self.second_category_table.item(row, 0)
-            suffix_item = self.second_category_table.item(row, 1)
             
-            if name_item and suffix_item:
+            if name_item:
                 name = name_item.text().strip()
-                suffix = suffix_item.text().strip()
                 
-                if name and suffix:
+                if name:
+                    # 根据表格行顺序分配后缀值（从10开始，每次递增10）
+                    suffix = str((row + 1) * 10)
                     second_cats[name] = suffix
         
         self._second_categories_cache[first_category] = second_cats
@@ -886,22 +875,17 @@ class TemplateSettingsDialog(QDialog):
             category_config = config.load_category_config()
             all_second_categories = category_config.get("second_categories", {})
         
-        # 收集第一分类数据
+        # 收集第一分类数据，根据表格行顺序重新分配排序值
         first_categories = {}
         for row in range(self.first_category_table.rowCount()):
             name_item = self.first_category_table.item(row, 0)
-            order_item = self.first_category_table.item(row, 1)
             
-            if name_item and order_item:
+            if name_item:
                 name = name_item.text().strip()
-                order = order_item.text().strip()
                 
-                if name and order:
-                    try:
-                        first_categories[name] = int(order)
-                    except ValueError:
-                        print(f"[WARNING] 分类 '{name}' 的排序必须是数字，跳过")
-                        continue
+                if name:  # 只保存非空行
+                    # 根据表格行顺序分配排序值（从1开始）
+                    first_categories[name] = row + 1
         
         # 保存配置
         updated_config = {
@@ -910,28 +894,32 @@ class TemplateSettingsDialog(QDialog):
         }
         
         config.save_category_config(updated_config)
+        
+        # 重新编码所有用户的存档数据
+        config.reencode_all_user_progress()
+        
+        # 发送分类配置更新信号
+        signal_bus.category_config_updated.emit()
+        
+        # 刷新表格显示
+        self._refresh_category_tables()
     
     def _save_category_config(self):
         """保存分类配置（显示提示框）"""
         from core.config import config
         from core.custom_message_box import CustomMessageBox
         
-        # 收集第一分类数据（过滤空白行）
+        # 收集第一分类数据，根据表格行顺序重新分配排序值
         first_categories = {}
         for row in range(self.first_category_table.rowCount()):
             name_item = self.first_category_table.item(row, 0)
-            order_item = self.first_category_table.item(row, 1)
             
-            if name_item and order_item:
+            if name_item:
                 name = name_item.text().strip()
-                order = order_item.text().strip()
                 
-                if name and order:  # 只保存非空行
-                    try:
-                        first_categories[name] = int(order)
-                    except ValueError:
-                        CustomMessageBox.warning(self, "错误", f"分类 '{name}' 的排序必须是数字")
-                        return
+                if name:  # 只保存非空行
+                    # 根据表格行顺序分配排序值（从1开始）
+                    first_categories[name] = row + 1
         
         # 先保存当前正在编辑的第二分类数据到缓存
         current_first = self.first_category_combo.currentText()
@@ -953,7 +941,16 @@ class TemplateSettingsDialog(QDialog):
         }
         
         if config.save_category_config(updated_config):
-            CustomMessageBox.information(self, "成功", "分类配置已保存")
+            # 重新编码所有用户的存档数据
+            config.reencode_all_user_progress()
+            
+            # 发送分类配置更新信号
+            signal_bus.category_config_updated.emit()
+            
+            # 刷新表格显示
+            self._refresh_category_tables()
+            
+            CustomMessageBox.information(self, "成功", "分类配置已保存，所有用户存档数据已自动更新")
             # 更新下拉框
             self._refresh_first_category_combo()
         else:
@@ -976,44 +973,43 @@ class TemplateSettingsDialog(QDialog):
         if index >= 0:
             self.first_category_combo.setCurrentIndex(index)
     
-    def _get_next_first_category_order(self):
-        """获取下一个第一分类排序号"""
-        existing_orders = set()
-        for row in range(self.first_category_table.rowCount()):
-            order_item = self.first_category_table.item(row, 1)
-            if order_item:
-                try:
-                    order = int(order_item.text().strip())
-                    existing_orders.add(order)
-                except ValueError:
-                    pass
-        
-        # 找到最小的未使用排序号，从1开始
-        next_order = 1
-        while next_order in existing_orders:
-            next_order += 1
-        
-        return next_order
     
-    def _get_next_second_category_suffix(self):
-        """获取下一个第二分类后缀"""
-        existing_suffixes = set()
-        for row in range(self.second_category_table.rowCount()):
-            suffix_item = self.second_category_table.item(row, 1)
-            if suffix_item:
-                try:
-                    suffix = int(suffix_item.text().strip())
-                    existing_suffixes.add(suffix)
-                except ValueError:
-                    pass
-        
-        # 找到最小的未使用后缀，从10开始，每次递增10
-        next_suffix = 10
-        while next_suffix in existing_suffixes:
-            next_suffix += 10
-        
-        return next_suffix
 
     def _load_background_image(self):
         """加载背景图片"""
         self.background_pixmap = load_background_image(config.theme)
+    
+    def _refresh_category_tables(self):
+        """刷新分类表格显示"""
+        # 重新加载分类配置
+        category_config = config.load_category_config()
+        
+        # 刷新第一分类表格
+        first_categories = category_config.get("first_categories", {})
+        sorted_categories = sorted(first_categories.items(), key=lambda x: x[1])
+        self.first_category_table.setRowCount(len(sorted_categories))
+        for i, (name, order) in enumerate(sorted_categories):
+            self.first_category_table.setItem(i, 0, QTableWidgetItem(name))
+        
+        # 刷新第二分类表格
+        current_first = self.first_category_combo.currentText()
+        if current_first:
+            second_categories = category_config.get("second_categories", {}).get(current_first, {})
+            sorted_second = sorted(second_categories.items(), key=lambda x: int(x[1]))
+            self.second_category_table.setRowCount(len(sorted_second))
+            for i, (name, suffix) in enumerate(sorted_second):
+                self.second_category_table.setItem(i, 0, QTableWidgetItem(name))
+    
+    def _on_first_category_row_moved(self, source_row, target_row):
+        """处理第一分类表格行移动事件"""
+        # 拖动后分类名称位置改变，但排序值保持不变
+        pass
+        
+    def _on_second_category_row_moved(self, source_row, target_row):
+        """处理第二分类表格行移动事件"""
+        # 拖动后分类名称位置改变，但后缀值保持不变
+        pass
+        
+    
+    
+    
