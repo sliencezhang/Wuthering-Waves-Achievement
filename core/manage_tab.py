@@ -456,6 +456,9 @@ class ManageTab(QWidget):
         self.second_category_filter.clear()
         self.second_category_filter.addItem("全部")
         
+        # 获取分类配置
+        category_config = config.load_category_config()
+        
         # 根据第一分类筛选第二分类
         if first_category != "全部":
             second_categories = set()
@@ -463,9 +466,18 @@ class ManageTab(QWidget):
                 if achievement.get('第一分类', '') == first_category:
                     second_categories.add(achievement.get('第二分类', ''))
             
-            for category in sorted(second_categories):
-                if category:
-                    self.second_category_filter.addItem(category)
+            # 按照配置中的顺序添加第二分类
+            if first_category in category_config.get("second_categories", {}):
+                second_category_order = category_config["second_categories"][first_category]
+                ordered_second_categories = sorted(second_categories, key=lambda x: int(second_category_order.get(x, 999)))
+                for category in ordered_second_categories:
+                    if category:
+                        self.second_category_filter.addItem(category)
+            else:
+                # 如果没有配置，按字母顺序
+                for category in sorted(second_categories):
+                    if category:
+                        self.second_category_filter.addItem(category)
         else:
             # 显示所有第二分类
             second_categories = set()
@@ -865,19 +877,35 @@ class ManageTab(QWidget):
         for version in sorted_versions:
             self.version_filter.addItem(version)
         
-        # 更新第一分类下拉框
+        # 获取分类配置
+        category_config = config.load_category_config()
+        first_category_order = category_config.get("first_categories", {})
+        
+        # 更新第一分类下拉框（按配置顺序）
         self.first_category_filter.clear()
         self.first_category_filter.addItem("全部")
-        for category in sorted(first_categories):
+        # 按照配置中的排序顺序添加
+        ordered_first_categories = sorted(first_categories, key=lambda x: first_category_order.get(x, 999))
+        for category in ordered_first_categories:
             if category:
                 self.first_category_filter.addItem(category)
         
         # 更新第二分类下拉框
         self.second_category_filter.clear()
         self.second_category_filter.addItem("全部")
-        for category in sorted(second_categories):
-            if category:
-                self.second_category_filter.addItem(category)
+        # 第二分类需要根据当前选中的第一分类来排序
+        current_first = self.first_category_filter.currentText()
+        if current_first != "全部" and current_first in category_config.get("second_categories", {}):
+            second_category_order = category_config["second_categories"].get(current_first, {})
+            ordered_second_categories = sorted(second_categories, key=lambda x: int(second_category_order.get(x, 999)))
+            for category in ordered_second_categories:
+                if category:
+                    self.second_category_filter.addItem(category)
+        else:
+            # 如果没有选中第一分类或选中"全部"，则按字母顺序
+            for category in sorted(second_categories):
+                if category:
+                    self.second_category_filter.addItem(category)
     
     def save_to_json(self):
         """分离保存基础数据和用户进度"""
