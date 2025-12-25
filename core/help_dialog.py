@@ -85,7 +85,19 @@ class HelpDialog(QDialog):
             "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;为荣耀倾注的花雨、他们都叫我残像收割机、无欲无求的我很难理解<br>"
             "建议通过点击<b>打开WIKI</b>按钮在网页中确认有新版本数据后再点击<b>清除缓存</b>，然后使用爬虫功能更新数据。</p>"
             
-            "<p><b>4. 爬虫使用说明</b></p>"
+            "<p><b>4. 设置-分类管理说明</b></p>"
+            "• 可以拖动表格行来改变第一分类、第二分类的排序，保持和游戏内排序一致<br>"
+            "• 保存设置后会自动重新编码，自动修改所有用户存档数据来适配新排序，不会导致状态数据丢失<br>"
+            "• 爬取数据遇到游戏新增的第一二分类时会自动保存在分类配置中，无需手动管理<br>"
+            "• 确认覆盖也会自动重新编码所有用户数据来保证数据一致性</p>"
+            
+            "<p><b>5. 状态列操作说明</b></p>"
+            "<p style='margin-left: 20px;'>在成就管理标签页的表格中:<br>"
+            "• <b>单击</b>状态列：在<span style='color: #27ae60;'>已完成</span>和<span style='color: #95a5a6;'>未完成</span>之间切换<br>"
+            "• <b>长按</b>状态列(按住1秒)：切换为<span style='color: #e67e22;'>暂不可获取</span>状态<br>"
+            "• 再次单击可恢复为未完成状态</p>"
+            
+            "<p><b>6. 爬虫使用说明</b></p>"
             "<p style='margin-left: 20px;'>爬虫功能<b>仅支持单个版本</b>的数据爬取。<br>"
             "使用步骤：<br>"
             "① 在设置-用户管理标签页设置通用认证信息<br>"
@@ -98,13 +110,9 @@ class HelpDialog(QDialog):
             "• 点击<b>清除缓存</b>按钮可删除本地缓存文件，下次爬取将重新获取最新数据<br>"
             "• 点击<b>打开WIKI</b>按钮可在浏览器中查看库街区Wiki成就页面是否有新版本成就数据</p>"
             
-            "<p><b>5. 状态列操作说明</b></p>"
-            "<p style='margin-left: 20px;'>在成就管理标签页的表格中:<br>"
-            "• <b>单击</b>状态列：在<span style='color: #27ae60;'>已完成</span>和<span style='color: #95a5a6;'>未完成</span>之间切换<br>"
-            "• <b>长按</b>状态列(按住1秒)：切换为<span style='color: #e67e22;'>暂不可获取</span>状态<br>"
-            "• 再次单击可恢复为未完成状态</p>"
             
-            "<p><b>6. 资源获取方式</b></p>"
+            
+            "<p><b>7. 资源获取方式</b></p>"
             "<p style='margin-left: 20px;'>如需添加更多角色头像和肖像图资源：</p>"
             "<p style='margin-left: 40px;'><b>头像图片:</b><br>"
             "① 访问 <a href='https://wiki.kurobbs.com/mc/catalogue/list?fid=1099&sid=1363' style='color: #3498db; text-decoration: underline;'>库街区Wiki-角色头像页面</a><br>"
