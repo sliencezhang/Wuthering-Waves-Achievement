@@ -365,12 +365,44 @@ class TemplateMainWindow(QMainWindow):
     
     def setup_update_check(self):
         """设置更新检查"""
+        # 检查并清理可能存在的过期缓存
+        self._clean_update_cache_if_needed()
+        
         # 连接更新检查信号
         signal_bus.update_available.connect(self.on_update_available)
         
         # 启动后台更新检查
         from core.update import check_for_updates_background
         check_for_updates_background()
+    
+    def _clean_update_cache_if_needed(self):
+        """如果需要，清理更新缓存"""
+        import json
+        from pathlib import Path
+        from version import VERSION
+        
+        cache_file = Path("resources/update_cache.json")
+        
+        # 如果缓存文件存在，检查版本信息
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+                
+                # 获取缓存中的版本信息
+                update_info = cache_data.get('update_info', {})
+                cached_current_version = update_info.get('current_version', '')
+                
+                # 如果当前版本与缓存中的版本不一致，说明软件已更新
+                if cached_current_version and cached_current_version != VERSION:
+                    print(f"检测到版本更新: {cached_current_version} -> {VERSION}, 清理更新缓存")
+                    cache_file.unlink()  # 删除缓存文件
+                    
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"读取缓存文件失败，删除缓存: {e}")
+                # 如果缓存文件损坏，直接删除
+                if cache_file.exists():
+                    cache_file.unlink()
     
     def on_update_available(self, update_info):
         """处理可用更新"""

@@ -148,21 +148,26 @@ class UpdateChecker:
         print(f"最新版本: {latest_ver}")
         
         # 比较版本
+        result = {
+            "current_version": str(current_ver),
+            "latest_version": str(latest_ver)
+        }
+        
         if latest_ver > current_ver:
-            return {
+            result.update({
                 "has_update": True,
                 "is_major": latest_ver.major > current_ver.major,
                 "is_minor": latest_ver.minor > current_ver.minor,
                 "is_patch": latest_ver.micro > current_ver.micro,
-                "current_version": str(current_ver),
-                "latest_version": str(latest_ver),
                 "update_type": self._get_update_type(current_ver, latest_ver)
-            }
+            })
         elif latest_ver < current_ver:
             # 本地版本比最新版本还新（可能是开发版）
-            return {"has_update": False, "is_dev": True}
+            result.update({"has_update": False, "is_dev": True})
         else:
-            return {"has_update": False, "is_latest": True}
+            result.update({"has_update": False, "is_latest": True})
+        
+        return result
     
     def _get_update_type(self, current: version.Version, latest: version.Version) -> str:
         """获取更新类型"""
