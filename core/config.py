@@ -51,6 +51,9 @@ class Config:
         self.update_download_url = "https://wwbml.lanzoum.com/b01880knob"  # 蓝奏云下载链接
         self.update_download_password = "1234"  # 下载密码
         
+        # 首次运行标记
+        self.first_run = True  # 默认设为true，load_config时会检查
+        
         # 使用 QSettings 存储认证信息
         from PySide6.QtCore import QSettings
         self.settings = QSettings("WutheringWavesAchievement", "AuthData")
@@ -68,8 +71,15 @@ class Config:
                     for key, value in loaded_data.items():
                         if hasattr(self, key):
                             setattr(self, key, value)
+                    # 如果配置文件存在，说明不是首次运行
+                    self.first_run = False
+            else:
+                # 配置文件不存在，是首次运行
+                self.first_run = True
         except Exception as e:
             print(f"加载配置失败: {e}")
+            # 出错时也当作首次运行
+            self.first_run = True
     
     def save_config(self):
         """保存配置"""
@@ -77,7 +87,7 @@ class Config:
             # 确保目录存在
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # 收集所有属性（不包括认证信息）
+            # 收集所有属性（不包括认证信息和内部配置）
             data = {
                 "current_user": self.current_user,
                 "users": self.users,
@@ -90,10 +100,7 @@ class Config:
                 "crawl_settings": self.crawl_settings,
                 "user_avatars": self.user_avatars,
                 "user_character_names": self.user_character_names,
-                "github_owner": self.github_owner,
-                "github_repo": self.github_repo,
-                "update_download_url": self.update_download_url,
-                "update_download_password": self.update_download_password
+                "first_run": False  # 保存后不再是首次运行
             }
             
             with open(self.config_file, 'w', encoding='utf-8') as f:
