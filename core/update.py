@@ -222,15 +222,11 @@ class UpdateChecker:
                 # 如果当前版本等于缓存中的最新版本，说明已经是最新版本
                 if self.parse_version(self.current_version) >= self.parse_version(cached_latest_version):
                     print(f"当前版本{self.current_version}已是最新，使用缓存")
-                    # 更新缓存为无更新状态，确保current_version正确
-                    no_update_result = {
-                        "has_update": False, 
-                        "is_latest": True,
-                        "current_version": self.current_version,
-                        "latest_version": cached_latest_version
-                    }
-                    self._save_cache(no_update_result)
-                    return no_update_result
+                    # 直接返回缓存结果，不更新时间戳
+                    update_info['current_version'] = self.current_version  # 确保当前版本正确
+                    update_info['has_update'] = False
+                    update_info['is_latest'] = True
+                    return update_info
             
             # 检查缓存时间
             cache_time = datetime.fromisoformat(cache_data.get('timestamp', '2000-01-01'))
