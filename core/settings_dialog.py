@@ -739,6 +739,17 @@ class TemplateSettingsDialog(QDialog):
         categories_layout.setStretch(1, 2)  # 第二分类占2份
         
         layout.addLayout(categories_layout)
+        
+        # 重新编号按钮区域
+        reencode_layout = QHBoxLayout()
+        reencode_layout.addStretch()
+        reencode_btn = QPushButton("重新编号")
+        reencode_btn.setFixedWidth(100)  # 5字宽度
+        reencode_btn.clicked.connect(self._reencode_achievements)
+        reencode_layout.addWidget(reencode_btn)
+        reencode_layout.addStretch()
+        layout.addLayout(reencode_layout)
+        
         layout.addStretch()  # 添加弹性空间
         
         # 初始化第二分类缓存
@@ -1009,6 +1020,51 @@ class TemplateSettingsDialog(QDialog):
         """处理第二分类表格行移动事件"""
         # 拖动后分类名称位置改变，但后缀值保持不变
         pass
+    
+    def _reencode_achievements(self):
+        """重新编号所有成就数据"""
+        # 确认对话框
+        reply = CustomMessageBox.question(
+            self,
+            "确认重新编号",
+            "重新编号将根据当前分类配置重新生成所有成就的编号和绝对编号。\n\n"
+            "此操作会修改基础成就数据和所有用户的进度数据。\n"
+            "是否继续？",
+            ("是", "否")
+        )
+        
+        if reply != CustomMessageBox.Yes:
+            return
+        
+        try:
+            # 调用config的reencode_all_user_progress方法
+            success = config.reencode_all_user_progress()
+            
+            if success:
+                CustomMessageBox.information(
+                    self,
+                    "重新编号完成",
+                    "所有成就数据已根据当前分类配置重新编号。\n"
+                    "成就管理标签页的数据已自动刷新。"
+                )
+                
+                # 通知主窗口刷新数据
+                signal_bus.category_config_updated.emit()
+            else:
+                CustomMessageBox.warning(
+                    self,
+                    "重新编号失败",
+                    "重新编号过程中出现错误，请检查日志获取详细信息。"
+                )
+                
+        except Exception as e:
+            CustomMessageBox.critical(
+                self,
+                "错误",
+                f"重新编号时发生错误：\n{str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
         
     
     
