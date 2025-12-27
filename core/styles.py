@@ -474,14 +474,14 @@ def get_scrollbar_style(theme="light"):
     return f"""
     QScrollBar:vertical {{
         background-color: {bg_color};
-        width: 6px;
-        border-radius: 3px;
+        width: 12px;
+        border-radius: 6px;
         margin: 0px;
     }}
     QScrollBar::handle:vertical {{
         background-color: {handle_color};
-        border-radius: 3px;
-        min-height: 15px;
+        border-radius: 6px;
+        min-height: 20px;
     }}
     QScrollBar::add-line:vertical,
     QScrollBar::sub-line:vertical {{
@@ -494,14 +494,14 @@ def get_scrollbar_style(theme="light"):
     }}
     QScrollBar:horizontal {{
         background-color: {bg_color};
-        height: 6px;
-        border-radius: 3px;
+        height: 12px;
+        border-radius: 6px;
         margin: 0px;
     }}
     QScrollBar::handle:horizontal {{
         background-color: {handle_color};
-        border-radius: 3px;
-        min-width: 15px;
+        border-radius: 6px;
+        min-width: 20px;
     }}
     QScrollBar::add-line:horizontal,
     QScrollBar::sub-line:horizontal {{
