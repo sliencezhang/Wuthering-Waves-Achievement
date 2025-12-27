@@ -549,11 +549,25 @@ class AchievementTable(QTableWidget):
                 
                 # 更新第二分类委托选项
                 self.update_second_category_delegate_for_first_category(new_value)
+                
+                # 显示通知
+                if old_value != new_value:
+                    achievement_name = achievement.get('名称', '')
+                    if achievement_name:
+                        from .manage_tab import show_notification
+                        show_notification(self.parent(), f"{achievement_name}：第一分类 {old_value} -> {new_value}，已保存")
                     
             elif col == 7:  # 第二分类
                 old_value = achievement.get('第二分类', '')
                 achievement['第二分类'] = new_value
                 print(f"[INFO] 第二分类已更新: {old_value} -> {new_value}")
+                
+                # 显示通知
+                if old_value != new_value:
+                    achievement_name = achievement.get('名称', '')
+                    if achievement_name:
+                        from .manage_tab import show_notification
+                        show_notification(self.parent(), f"{achievement_name}：第二分类 {old_value} -> {new_value}，已保存")
             
             # 保存数据
             self.save_data()
