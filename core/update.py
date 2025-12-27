@@ -187,9 +187,10 @@ class UpdateChecker:
         
         缓存策略：
         1. 如果force_check为True，强制检查
-        2. 如果缓存不存在，进行检查
-        3. 如果缓存超过24小时，进行检查
-        4. 否则使用缓存结果
+        2. 读取缓存文件中的timestamp
+        3. 如果读取不到timestamp或超过24小时，检查github
+        4. 检查github后保存timestamp
+        5. 新增：检查当前版本与缓存中的版本是否一致，如果不一致说明已更新，重新检查
         """
         # 1. 检查是否需要跳过缓存
         if force_check:
@@ -206,6 +207,31 @@ class UpdateChecker:
             with open(self.cache_file, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
             
+            update_info = cache_data.get('update_info', {})
+            cached_current_version = update_info.get('current_version')
+            cached_latest_version = update_info.get('latest_version')
+            
+            # 检查缓存中的当前版本是否与实际版本一致
+            if cached_current_version and cached_current_version != self.current_version:
+                print(f"检测到版本变化：{cached_current_version} -> {self.current_version}，重新检查更新")
+                # 版本发生变化，需要重新检查更新
+                return self._check_and_cache()
+            
+            # 检查版本一致性
+            if cached_latest_version:
+                # 如果当前版本等于缓存中的最新版本，说明已经是最新版本
+                if self.parse_version(self.current_version) >= self.parse_version(cached_latest_version):
+                    print(f"当前版本{self.current_version}已是最新，使用缓存")
+                    # 更新缓存为无更新状态，确保current_version正确
+                    no_update_result = {
+                        "has_update": False, 
+                        "is_latest": True,
+                        "current_version": self.current_version,
+                        "latest_version": cached_latest_version
+                    }
+                    self._save_cache(no_update_result)
+                    return no_update_result
+            
             # 检查缓存时间
             cache_time = datetime.fromisoformat(cache_data.get('timestamp', '2000-01-01'))
             now = datetime.now()
@@ -215,9 +241,10 @@ class UpdateChecker:
                 print("缓存过期，重新检查...")
                 return self._check_and_cache()
             
-            # 使用缓存
+            # 使用缓存，但确保current_version是最新的
+            update_info['current_version'] = self.current_version
             print("使用缓存数据...")
-            return cache_data.get('update_info', {})
+            return update_info
             
         except (json.JSONDecodeError, KeyError, ValueError) as e:
             print(f"缓存读取失败: {e}，重新检查...")
@@ -229,17 +256,24 @@ class UpdateChecker:
         release_data = self.get_latest_release()
         
         if not release_data:
-            # 如果获取失败，返回空结果
-            result = {"has_update": False, "error": "无法获取更新信息"}
+            # 如果获取失败，返回空结果，但仍包含当前版本信息
+            result = {
+                "has_update": False, 
+                "error": "无法获取更新信息",
+                "current_version": self.current_version,
+                "latest_version": self.current_version  # 无法获取最新版本时使用当前版本
+            }
             self._save_cache(result)
             return result
         
         # 比较版本
         version_comparison = self.compare_versions(release_data.get('tag_name', '0.0.0'))
         
-        # 构建完整结果
+        # 构建完整结果，确保始终包含版本信息
         result = {
             **version_comparison,
+            "current_version": self.current_version,
+            "latest_version": release_data.get('tag_name', '0.0.0'),
             "release_info": {
                 "tag_name": release_data.get('tag_name'),
                 "name": release_data.get('name', ''),
@@ -260,6 +294,10 @@ class UpdateChecker:
     
     def _save_cache(self, update_info: dict):
         """保存检查结果到缓存"""
+        # 确保update_info包含正确的current_version
+        if 'current_version' not in update_info:
+            update_info['current_version'] = self.current_version
+        
         cache_data = {
             "timestamp": datetime.now().isoformat(),
             "update_info": update_info,

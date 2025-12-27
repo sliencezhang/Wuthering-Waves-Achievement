@@ -371,9 +371,9 @@ class TemplateMainWindow(QMainWindow):
         # 连接更新检查信号
         signal_bus.update_available.connect(self.on_update_available)
         
-        # 启动后台更新检查
-        from core.update import check_for_updates_background
-        check_for_updates_background()
+        # 延迟3秒后进行后台更新检查，避免影响启动速度
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(3000, self._delayed_update_check)
     
     def _clean_update_cache_if_needed(self):
         """如果需要，清理更新缓存"""
@@ -403,6 +403,14 @@ class TemplateMainWindow(QMainWindow):
                 # 如果缓存文件损坏，直接删除
                 if cache_file.exists():
                     cache_file.unlink()
+    
+    def _delayed_update_check(self):
+        """延迟的更新检查，避免影响启动速度"""
+        try:
+            from core.update import check_for_updates_background
+            check_for_updates_background()
+        except Exception as e:
+            print(f"延迟更新检查失败: {e}")
     
     def on_update_available(self, update_info):
         """处理可用更新"""
