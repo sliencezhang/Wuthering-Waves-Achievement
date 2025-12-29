@@ -96,15 +96,9 @@ class CustomMessageBox(QDialog):
         all_buttons = self.findChildren(QPushButton)
         content_buttons = [btn for btn in all_buttons if btn.parent() == self.container_widget]
         
-        # 对于"是/否"对话框，第一个按钮（是）返回accept，第二个按钮（否）返回reject
-        if len(content_buttons) == 2:
-            if index == 0:  # "是"按钮
-                self.accept()
-            else:  # "否"按钮
-                self.reject()
-        else:
-            # 其他情况，默认都accept
-            self.accept()
+        # 对于"是/否"对话框，所有按钮都accept，但通过result_value区分
+        # 这样确保exec()返回Accepted，且result_value正确设置
+        self.accept()
     
     @staticmethod
     def information(parent, title, message):
@@ -134,8 +128,17 @@ class CustomMessageBox(QDialog):
             buttons = ("是", "否")
         dialog = CustomMessageBox(parent, title, message, "❓", buttons)
         result = dialog.exec()
-        # 返回正确的Yes/No值：点击"是"（索引0）返回Yes(1)，点击"否"（索引1）返回No(0)
+        # 如果是通过关闭按钮关闭的（result_value为-1），返回No(0)
+        # 否则：点击"是"（索引0）返回Yes(1)，点击"否"（索引1）返回No(0)
+        if dialog.result_value == -1:
+            return CustomMessageBox.No
         return CustomMessageBox.Yes if dialog.result_value == 0 else CustomMessageBox.No
+    
+    def closeEvent(self, event):
+            """重写关闭事件，设置result_value为-1表示通过关闭按钮关闭"""
+            self.result_value = -1
+            self.reject()
+            event.ignore()  # 阻止默认的关闭行为
     
     def text_input(parent, title, message, default=""):
         """文本输入对话框"""
