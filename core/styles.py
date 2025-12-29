@@ -258,13 +258,53 @@ class _BaseStylesClass:
             background-color: {input_bg};
             {color_style}
             font-size: 12px;
+            color: {colors.TEXT_PRIMARY};
         }}
         QTableWidget {{
             gridline-color: {colors.TABLE_GRID};
             selection-background-color: {selection_bg};
+            outline: 0px;
+            border: 1px solid {colors.BORDER};
         }}
         QTableWidget::item {{
             padding: 5px;
+            border: none;
+            outline: 0px;
+            border-left: none;
+            border-right: none;
+            border-top: none;
+            border-bottom: none;
+        }}
+        QTableWidget::item:selected {{
+            background-color: {selection_bg};
+            border: none;
+            outline: 0px;
+            border-left: none;
+            border-right: none;
+            border-top: none;
+            border-bottom: none;
+            color: {colors.TEXT_PRIMARY};
+        }}
+        QTableWidget::item:focus {{
+            border: none;
+            outline: 0px;
+            border-left: none;
+            border-right: none;
+            border-top: none;
+            border-bottom: none;
+        }}
+        QTableWidget:focus {{
+            border: 1px solid {colors.BORDER};
+            outline: 0px;
+        }}
+        /* 强制移除所有可能的边框 */
+        QTableWidget::item:hover {{
+            border: none;
+            outline: 0px;
+        }}
+        QTableWidget::item:selected:hover {{
+            border: none;
+            outline: 0px;
         }}
         QListWidget {{
             background-color: {input_bg};
@@ -461,6 +501,8 @@ def get_font_gray_style(theme="light"):
     """灰色文字样式"""
     return BaseStyles.get_label_style(theme, "gray")
 
+
+
 def get_scrollbar_style(theme="light"):
     """滚动条样式 - 用于表格等控件"""
     opacity = ColorPalette.Opacity.SCROLLBAR
@@ -545,6 +587,11 @@ def get_notification_style(theme="light"):
             font-weight: bold;
         }}
     """
+
+
+def get_text_input_style(theme="light"):
+    """文本输入样式"""
+    return BaseStyles.get_text_input_style(theme)
 
 
 def get_help_text_style(theme="light"):
