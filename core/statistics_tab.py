@@ -1202,63 +1202,181 @@ class StatisticsTab(QWidget):
     def calculate_statistics(self, achievements, version_filter='全部'):
         """计算统计数据"""
         stats = {
-            'total': len(achievements),
+            'total': 0,
             'completed': 0,
             'incomplete': 0,
             'unavailable': 0,
             'completion_rate': 0,
             'categories': {},
+            'subcategories': {},
             'versions': {}
         }
 
+        # 预处理：收集成就组信息
+        groups = {}
+        for achievement in achievements:
+            group_id = achievement.get('成就组ID')
+            if group_id:
+                if group_id not in groups:
+                    groups[group_id] = []
+                groups[group_id].append(achievement)
+
+        # 统计完成状态
+        processed_groups = set()
         for achievement in achievements:
             # 统计完成状态
             status = achievement.get('获取状态', '')
+            group_id = achievement.get('成就组ID')
+            
             if status == '已完成':
-                stats['completed'] += 1
+                if group_id:
+                    # 成就组：检查是否已统计过
+                    if group_id not in processed_groups:
+                        stats['completed'] += 1
+                        processed_groups.add(group_id)
+                else:
+                    # 普通成就
+                    stats['completed'] += 1
             elif status == '暂不可获取':
                 stats['unavailable'] += 1
-            else:
-                stats['incomplete'] += 1
 
             # 统计分类
             category = achievement.get('第一分类', '未知')
             if category not in stats['categories']:
-                stats['categories'][category] = {'total': 0, 'completed': 0}
-            stats['categories'][category]['total'] += 1
-            if status == '已完成':
-                stats['categories'][category]['completed'] += 1
-
-            # 统计版本
-            version = achievement.get('版本', '未知')
-            if version_filter == '全部':
-                # 全部时，按大版本统计
-                if version != '未知':
-                    # 提取大版本号（如2.7 -> 2.0）
-                    major_version = version.split('.')[0] + '.0'
-                    if major_version not in stats['versions']:
-                        stats['versions'][major_version] = 0
-                    stats['versions'][major_version] += 1
-                else:
-                    if '未知' not in stats['versions']:
-                        stats['versions']['未知'] = 0
-                    stats['versions']['未知'] += 1
+                stats['categories'][category] = {'total': 0, 'completed': 0, 'processed_groups': set()}
+            
+            group_id = achievement.get('成就组ID')
+            if group_id:
+                # 成就组：每个组只统计一次
+                if group_id not in stats['categories'][category]['processed_groups']:
+                    stats['categories'][category]['total'] += 1
+                    if group_id in processed_groups:  # 该组已完成
+                        stats['categories'][category]['completed'] += 1
+                    stats['categories'][category]['processed_groups'].add(group_id)
             else:
-                # 具体版本时，显示该大版本下所有小版本
-                if version != '未知':
-                    # 获取筛选条件的大版本号
-                    filter_major = version_filter.split('.')[0] + '.0'
-                    achievement_major = version.split('.')[0] + '.0'
+                # 普通成就
+                stats['categories'][category]['total'] += 1
+                if status == '已完成':
+                    stats['categories'][category]['completed'] += 1
 
-                    # 只统计同一大版本的
-                    if achievement_major == filter_major:
-                        if version not in stats['versions']:
-                            stats['versions'][version] = 0
-                        stats['versions'][version] += 1
+            # 统计第二分类
+            subcategory = achievement.get('第二分类', '未知')
+            if subcategory not in stats['subcategories']:
+                stats['subcategories'][subcategory] = {'total': 0, 'completed': 0, 'processed_groups': set()}
+            
+            if group_id:
+                # 成就组：每个组只统计一次
+                if group_id not in stats['subcategories'][subcategory]['processed_groups']:
+                    stats['subcategories'][subcategory]['total'] += 1
+                    if group_id in processed_groups:  # 该组已完成
+                        stats['subcategories'][subcategory]['completed'] += 1
+                    stats['subcategories'][subcategory]['processed_groups'].add(group_id)
+            else:
+                # 普通成就
+                stats['subcategories'][subcategory]['total'] += 1
+                if status == '已完成':
+                    stats['subcategories'][subcategory]['completed'] += 1
+
+            # 统计版本（考虑成就组）
+            # 使用一个单独的集合来跟踪已处理的成就组
+            if 'processed_version_groups' not in stats:
+                stats['processed_version_groups'] = set()
+            
+            if group_id:
+                # 成就组：每个组只统计一次版本
+                if group_id not in stats['processed_version_groups']:
+                    version = achievement.get('版本', '未知')
+                    if version_filter == '全部':
+                        # 全部时，按大版本统计
+                        if version != '未知':
+                            # 提取大版本号（如2.7 -> 2.0）
+                            major_version = version.split('.')[0] + '.0'
+                            if major_version not in stats['versions']:
+                                stats['versions'][major_version] = 0
+                            stats['versions'][major_version] += 1
+                        else:
+                            if '未知' not in stats['versions']:
+                                stats['versions']['未知'] = 0
+                            stats['versions']['未知'] += 1
+                    else:
+                        # 具体版本时，显示该大版本下所有小版本
+                        if version != '未知':
+                            # 获取筛选条件的大版本号
+                            filter_major = version_filter.split('.')[0] + '.0'
+                            achievement_major = version.split('.')[0] + '.0'
+
+                            # 只统计同一大版本的
+                            if achievement_major == filter_major:
+                                if version not in stats['versions']:
+                                    stats['versions'][version] = 0
+                                stats['versions'][version] += 1
+                        else:
+                            if '未知' not in stats['versions']:
+                                stats['versions']['未知'] = 0
+                            stats['versions']['未知'] += 1
+                    
+                    stats['processed_version_groups'].add(group_id)
+            else:
+                # 普通成就：直接统计版本
+                version = achievement.get('版本', '未知')
+                if version_filter == '全部':
+                    # 全部时，按大版本统计
+                    if version != '未知':
+                        # 提取大版本号（如2.7 -> 2.0）
+                        major_version = version.split('.')[0] + '.0'
+                        if major_version not in stats['versions']:
+                            stats['versions'][major_version] = 0
+                        stats['versions'][major_version] += 1
+                    else:
+                        if '未知' not in stats['versions']:
+                            stats['versions']['未知'] = 0
+                        stats['versions']['未知'] += 1
                 else:
-                    if '未知' not in stats['versions']:
-                        stats['versions']['未知'] = 0
-                    stats['versions']['未知'] += 1
+                    # 具体版本时，显示该大版本下所有小版本
+                    if version != '未知':
+                        # 获取筛选条件的大版本号
+                        filter_major = version_filter.split('.')[0] + '.0'
+                        achievement_major = version.split('.')[0] + '.0'
+
+                        # 只统计同一大版本的
+                        if achievement_major == filter_major:
+                            if version not in stats['versions']:
+                                stats['versions'][version] = 0
+                            stats['versions'][version] += 1
+                    else:
+                        if '未知' not in stats['versions']:
+                            stats['versions']['未知'] = 0
+                        stats['versions']['未知'] += 1
+
+        # 计算未完成的成就组
+        for group_id in groups:
+            if group_id not in processed_groups:  # 该组没有完成
+                stats['incomplete'] += 1
+        
+        # 计算未完成的普通成就
+        for achievement in achievements:
+            status = achievement.get('获取状态', '')
+            group_id = achievement.get('成就组ID')
+            if status != '已完成' and status != '暂不可获取' and not group_id:
+                stats['incomplete'] += 1
+        
+        # 计算总计（考虑成就组）
+        total_groups = len(groups)
+        normal_achievements = sum(1 for a in achievements if not a.get('成就组ID'))
+        stats['total'] = total_groups + normal_achievements
+
+        # 清理临时数据
+        for category in stats['categories']:
+            if 'processed_groups' in stats['categories'][category]:
+                del stats['categories'][category]['processed_groups']
+        
+        for subcategory in stats['subcategories']:
+            if 'processed_groups' in stats['subcategories'][subcategory]:
+                del stats['subcategories'][subcategory]['processed_groups']
+        
+        # 清理版本统计的临时数据
+        if 'processed_version_groups' in stats:
+            del stats['processed_version_groups']
 
         # 计算完成率
         if stats['total'] > 0:
@@ -1268,11 +1386,21 @@ class StatisticsTab(QWidget):
         return stats
 
     def calculate_version_stats(self, achievements, version_filter):
-        """单独计算版本统计"""
+        """单独计算版本统计（考虑成就组）"""
         version_stats = {}
+        processed_groups = set()  # 跟踪已处理的成就组
 
         for achievement in achievements:
+            group_id = achievement.get('成就组ID')
             version = achievement.get('版本', '未知')
+
+            # 如果是成就组，检查是否已处理过
+            if group_id and group_id in processed_groups:
+                continue
+
+            if group_id:
+                # 标记该组已处理
+                processed_groups.add(group_id)
 
             if version_filter == '全部':
                 # 全部时，按大版本统计
@@ -1361,87 +1489,30 @@ class StatisticsTab(QWidget):
         }
         self.pie_chart.set_data(pie_data)
 
-        # 2. 更新柱状图 - 根据筛选条件显示不同统计
+        # 2. 更新柱状图 - 使用统一的stats数据
         bar_data = {}
         first_category = self.first_category_filter.currentText()
         second_category = self.second_category_filter.currentText()
-
-        # 获取版本筛选条件
-        version_filter = self.version_filter.currentText()
-
+        
+        # 直接使用stats中已经计算好的分类数据
         if first_category == '全部':
-            # 第一分类全部时，使用所有数据重新统计第一分类（考虑版本筛选）
-            first_categories = {}
-            for achievement in self.merged_achievements:
-                # 应用版本筛选
-                if version_filter != '全部' and achievement.get('版本', '') != version_filter:
-                    continue
-
-                first_cat = achievement.get('第一分类', '未知')
-                if first_cat not in first_categories:
-                    first_categories[first_cat] = {'total': 0, 'completed': 0}
-                first_categories[first_cat]['total'] += 1
-                if achievement.get('获取状态', '') == '已完成':
-                    first_categories[first_cat]['completed'] += 1
-
-            for category, data in first_categories.items():
-                bar_data[category] = {
-                    'total': data['total'],
-                    'completed': data['completed']
-                }
+            # 使用第一分类数据
+            bar_data = stats['categories']
         elif second_category == '全部':
-            # 显示该第一分类下的第二分类统计（考虑版本筛选）
-            second_categories = {}
-            for achievement in self.merged_achievements:
-                # 应用筛选条件
-                if achievement.get('第一分类', '') != first_category:
-                    continue
-                if version_filter != '全部' and achievement.get('版本', '') != version_filter:
-                    continue
-
-                second_cat = achievement.get('第二分类', '未知')
-                if second_cat not in second_categories:
-                    second_categories[second_cat] = {'total': 0, 'completed': 0}
-                second_categories[second_cat]['total'] += 1
-                if achievement.get('获取状态', '') == '已完成':
-                    second_categories[second_cat]['completed'] += 1
-
-            for category, data in second_categories.items():
-                bar_data[category] = {
-                    'total': data['total'],
-                    'completed': data['completed']
-                }
+            # 使用第二分类数据
+            bar_data = stats['subcategories']
         else:
-            # 筛选了具体第二分类时，显示该第一分类下的所有第二分类统计
-            # 获取该第二分类所属的第一分类
-            target_first_category = None
-            for achievement in self.merged_achievements:
-                if achievement.get('第二分类', '') == second_category:
-                    target_first_category = achievement.get('第一分类', '')
-                    break
+            # 使用具体的第二分类数据
+            # 从subcategories中获取对应的数据
+            if second_category in stats['subcategories']:
+                bar_data = {second_category: stats['subcategories'][second_category]}
+            else:
+                bar_data = {}
+        
 
-            # 统计该第一分类下的所有第二分类（使用所有合并的数据，考虑版本筛选）
-            if target_first_category:
-                second_categories = {}
-                for achievement in self.merged_achievements:
-                    # 应用筛选条件
-                    if achievement.get('第一分类', '') != target_first_category:
-                        continue
-                    if version_filter != '全部' and achievement.get('版本', '') != version_filter:
-                        continue
+                
 
-                    second_cat = achievement.get('第二分类', '未知')
-                    if second_cat not in second_categories:
-                        second_categories[second_cat] = {'total': 0, 'completed': 0}
-                    second_categories[second_cat]['total'] += 1
-                    if achievement.get('获取状态', '') == '已完成':
-                        second_categories[second_cat]['completed'] += 1
-
-                for category, data in second_categories.items():
-                    bar_data[category] = {
-                        'total': data['total'],
-                        'completed': data['completed']
-                    }
+                
 
         self.bar_chart.set_data(bar_data)
 
