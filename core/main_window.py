@@ -237,6 +237,9 @@ class TemplateMainWindow(QMainWindow):
             self.avatar_label.update_avatar(avatar_path)
         else:
             print("[DEBUG] 没有找到用户头像，使用默认头像")
+            # 使用默认头像（男漂泊者）
+            default_avatar = os.path.join("resources", "profile", "男漂泊者.png")
+            self.avatar_label.update_avatar(default_avatar)
     
     def on_avatar_clicked(self, event):
         """头像点击事件"""
