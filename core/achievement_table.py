@@ -232,6 +232,8 @@ class AchievementTable(QTableWidget):
                 status_item.setForeground(QColor(128, 128, 128))  # 灰色
             elif status == '暂不可获取':
                 status_item.setForeground(QColor(255, 0, 0))  # 红色
+            elif status == '已占用':
+                status_item.setForeground(QColor(255, 69, 0))  # 红橙色
                 
             self.setItem(row, 0, status_item)
 
@@ -460,6 +462,9 @@ class AchievementTable(QTableWidget):
                     new_status = '已完成'
                 elif current_status == '已完成':
                     new_status = '未完成'
+                elif current_status == '已占用':
+                        # 已占用状态不能直接切换，需要解锁
+                    new_status = '未完成'
                 else:
                     new_status = '未完成'
                 
@@ -469,6 +474,8 @@ class AchievementTable(QTableWidget):
                     item.setForeground(QColor(255, 140, 0))  # 橙色
                 elif new_status == '未完成':
                     item.setForeground(QColor(128, 128, 128))  # 灰色
+                elif new_status == '已占用':
+                    item.setForeground(QColor(255, 69, 0))  # 红橙色
                 
                 # 强制重绘该单元格和viewport
                 self.viewport().update()
@@ -476,7 +483,16 @@ class AchievementTable(QTableWidget):
                 
                 # 立即更新数据
                 if 0 <= row < len(self.achievements):
-                    self.achievements[row]['获取状态'] = new_status
+                    achievement = self.achievements[row]
+                    achievement['获取状态'] = new_status
+                    
+                    # 成就组逻辑处理
+                    if new_status == '已完成':
+                        self._handle_achievement_group_completion(row, achievement)
+                    elif new_status == '未完成' and (current_status == '已占用' or current_status == '已完成'):
+                        # 从已占用或已完成状态切换到未完成，解锁同组其他成就
+                        self._unlock_group_achievements(achievement)
+                    
                     # 立即保存数据（兼容不同的父组件）
                     parent = self.parent()
                     if hasattr(parent, 'save_local_data'):
@@ -659,6 +675,69 @@ class AchievementTable(QTableWidget):
         # 确保编辑完成后立即保存
         self.clearSelection()
         
+    def _handle_achievement_group_completion(self, completed_row, completed_achievement):
+        """处理成就组完成逻辑"""
+        group_id = completed_achievement.get('成就组ID')
+        if not group_id:
+            return
+        
+        mutex_achievements = completed_achievement.get('互斥成就', [])
+        if not mutex_achievements:
+            return
+        
+        completed_code = completed_achievement.get('编号', '')
+        
+        # 锁定同组其他成就
+        for i, achievement in enumerate(self.achievements):
+            if i == completed_row:
+                continue  # 跳过已完成的成就
+            
+            achievement_code = achievement.get('编号', '')
+            if achievement_code in mutex_achievements:
+                # 设置为已占用状态
+                achievement['获取状态'] = '已占用'
+                
+                # 更新表格显示
+                status_item = self.item(i, 0)
+                if status_item:
+                    status_item.setText('已占用')
+                    status_item.setForeground(QColor(255, 69, 0))  # 红橙色
+                
+                print(f"[INFO] 成就组 {group_id}：已占用成就 {achievement.get('名称', '')}")
+        
+        # 强制重绘
+        self.viewport().update()
+        self.update()
+    
+    def _unlock_group_achievements(self, unlocked_achievement):
+        """解锁同组其他成就 - 将同组所有成就都设为未完成"""
+        group_id = unlocked_achievement.get('成就组ID')
+        if not group_id:
+            return
+        
+        unlocked_code = unlocked_achievement.get('编号', '')
+        
+        # 将同组所有成就都设为未完成状态
+        for i, achievement in enumerate(self.achievements):
+            if achievement.get('成就组ID') == group_id:
+                achievement_code = achievement.get('编号', '')
+                if achievement_code != unlocked_code:  # 跳过当前成就
+                    # 不管当前状态是什么，都设置为未完成
+                    old_status = achievement.get('获取状态', '')
+                    achievement['获取状态'] = '未完成'
+                    
+                    # 更新表格显示
+                    status_item = self.item(i, 0)
+                    if status_item:
+                        status_item.setText('未完成')
+                        status_item.setForeground(QColor(128, 128, 128))  # 灰色
+                    
+                    print(f"[INFO] 成就组 {group_id}：成就 {achievement.get('名称', '')} 从 {old_status} 变为未完成")
+        
+        # 强制重绘
+        self.viewport().update()
+        self.update()
+    
     def apply_theme(self, theme):
         """应用主题"""
         # 更新表格样式
