@@ -1,7 +1,8 @@
 ﻿from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
                                QWidget, QLabel, QLineEdit, QPushButton,
                                QDialogButtonBox, QFileDialog, QGroupBox, QCheckBox, QTableWidget,
-                               QTableWidgetItem, QComboBox)
+                               QTableWidgetItem, QComboBox, QMessageBox)
+from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt
 
 from core.config import config
@@ -67,13 +68,17 @@ class TemplateSettingsDialog(QDialog):
         tabs = [
             ("👤 用户管理", self._create_user_tab),
             ("🎨 外观设置", self._create_appearance_tab),
-            ("📂 分类管理", self._create_category_tab)
+            ("📂 分类管理", self._create_category_tab),
+            ("🎯 成就组管理", self._create_achievement_group_tab)
         ]
 
         for name, creator in tabs:
             self.tab_widget.addTab(creator(), name)
 
         layout.addWidget(self.tab_widget)
+        
+        # 连接tab切换事件
+        self.tab_widget.currentChanged.connect(self._on_tab_changed)
 
         # 按钮区域
         button_box = self._create_button_box()
@@ -546,8 +551,6 @@ class TemplateSettingsDialog(QDialog):
         
         # 刷新用户列表
         self._refresh_user_list()
-        
-        CustomMessageBox.information(self, "成功", f"用户 {nickname} 添加成功")
 
     def _switch_to_user(self, username):
         """切换到指定用户"""
@@ -557,9 +560,6 @@ class TemplateSettingsDialog(QDialog):
             
             # 刷新用户列表
             self._refresh_user_list()
-            
-            # 发射用户切换信号
-            signal_bus.user_switched.emit(username)
         else:
             CustomMessageBox.warning(self, "警告", "切换用户失败")
 
@@ -617,20 +617,52 @@ class TemplateSettingsDialog(QDialog):
         if reply == CustomMessageBox.Yes:
             # 从用户列表中删除
             if username in config.users:
+                # 获取用户的UID用于删除存档文件
+                user_data = config.users[username]
+                uid = user_data.get('uid', username) if isinstance(user_data, dict) else username
+                
                 del config.users[username]
                 
-                # 如果删除的是当前用户，清空当前用户
+                # 同时删除用户的头像和角色名信息
+                if username in config.user_avatars:
+                    del config.user_avatars[username]
+                if username in config.user_character_names:
+                    del config.user_character_names[username]
+                
+                # 删除用户的存档文件
+                import os
+                from core.config import get_resource_path
+                progress_file = get_resource_path(f"resources/user_progress_{uid}.json")
+                if progress_file.exists():
+                    try:
+                        os.remove(progress_file)
+                        print(f"[INFO] 已删除用户 {username} (UID: {uid}) 的存档文件")
+                    except Exception as e:
+                        print(f"[ERROR] 删除用户存档文件失败: {str(e)}")
+                
+                # 如果删除的是当前用户，需要切换到第一个用户
                 if username == config.get_current_user():
-                    config.current_user = ""
-                    self.current_user_label.setText("当前用户: 未设置")
+                    if config.users:  # 如果还有其他用户
+                        # 获取第一个用户
+                        first_user = list(config.users.keys())[0]
+                        # 使用switch_user方法切换，会自动发射信号
+                        config.switch_user(first_user)
+                        # 获取第一个用户的昵称
+                        first_user_data = config.users[first_user]
+                        if isinstance(first_user_data, dict):
+                            nickname = first_user_data.get('nickname', first_user)
+                        else:
+                            nickname = first_user_data
+                        self.current_user_label.setText(f"当前用户: {nickname}")
+                    else:  # 如果没有其他用户了
+                        config.current_user = ""
+                        self.current_user_label.setText("当前用户: 未设置")
                 
                 # 保存配置
                 config.save_config()
                 
                 # 刷新用户列表
                 self._refresh_user_list()
-                
-                CustomMessageBox.information(self, "成功", f"用户 {username} 已删除")
     
     def _create_category_tab(self):
         """创建分类管理标签页"""
@@ -764,6 +796,630 @@ class TemplateSettingsDialog(QDialog):
         self.second_category_table._on_row_moved = lambda table, src, dst: self._on_second_category_row_moved(src, dst)
         
         return widget
+    
+    def _create_achievement_group_tab(self):
+        """创建成就组管理标签页"""
+        from core.config import config
+        
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # 说明文字
+        info_label = QLabel("管理成就组配置，设置互斥成就关系")
+        info_label.setStyleSheet(get_settings_desc_style(config.theme))
+        layout.addWidget(info_label)
+        
+        # 创建左右布局容器
+        groups_layout = QHBoxLayout()
+        
+        # 成就组管理（左侧）- 调整宽度
+        groups_group = QGroupBox("成就组管理")
+        groups_group.setMaximumWidth(350)  # 增加最大宽度
+        groups_layout_widget = QVBoxLayout(groups_group)
+        
+        # 成就组表格
+        self.groups_table = DraggableTableWidget()
+        self.groups_table.setColumnCount(1)
+        self.groups_table.setHorizontalHeaderLabels(["组名称"])
+        self.groups_table.horizontalHeader().setStretchLastSection(True)
+        
+        # 设置组ID列不可编辑，组名称列可编辑
+        
+        
+        # 应用滚动条样式
+        from core.styles import get_scrollbar_style
+        self.groups_table.setStyleSheet(self.groups_table.styleSheet() + get_scrollbar_style(config.theme))
+        
+        # 禁用选择行为
+        self.groups_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.groups_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        
+        # 禁用焦点以移除焦点指示器
+        self.groups_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        
+        # 填充成就组数据
+        self._load_achievement_groups()
+        
+        # 设置表格最小高度
+        self.groups_table.setMinimumHeight(400)
+        groups_layout_widget.addWidget(self.groups_table)
+        
+        # 成就组按钮
+        groups_btn_layout = QHBoxLayout()
+        groups_btn_layout.addStretch()  # 左侧弹性空间
+        
+        add_group_btn = QPushButton("添加组")
+        add_group_btn.setStyleSheet(get_button_style(config.theme))
+        add_group_btn.clicked.connect(self._add_achievement_group)
+        groups_btn_layout.addWidget(add_group_btn)
+        
+        delete_group_btn = QPushButton("删除组")
+        delete_group_btn.setStyleSheet(get_button_style(config.theme))
+        delete_group_btn.clicked.connect(self._delete_achievement_group)
+        groups_btn_layout.addWidget(delete_group_btn)
+        
+        groups_layout_widget.addLayout(groups_btn_layout)
+        groups_layout.addWidget(groups_group, 1)  # 设置占比为1
+        
+        # 组内成就管理（右侧）- 占据更多空间
+        members_group = QGroupBox("组内成就管理")
+        members_layout = QVBoxLayout(members_group)
+        
+        # 当前选择的组
+        current_group_layout = QHBoxLayout()
+        current_group_layout.addWidget(QLabel("当前组："))
+        self.current_group_label = QLabel("未选择")
+        self.current_group_label.setStyleSheet("font-weight: bold; color: #0078d4;")
+        current_group_layout.addWidget(self.current_group_label)
+        current_group_layout.addStretch()
+        members_layout.addLayout(current_group_layout)
+        
+        # 组内成就表格
+        self.group_members_table = QTableWidget()
+        self.group_members_table.setColumnCount(3)
+        self.group_members_table.setHorizontalHeaderLabels(["名称", "描述", "移除"])
+        self.group_members_table.horizontalHeader().setStretchLastSection(True)
+        self.group_members_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.group_members_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)  # 禁止选择
+        self.group_members_table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # 允许获得焦点
+        self.group_members_table.setShowGrid(True)  # 显示网格线
+        self.group_members_table.setStyleSheet(self.group_members_table.styleSheet() + get_scrollbar_style(config.theme))
+        
+        # 设置列宽
+        self.group_members_table.setColumnWidth(0, 150)  # 名称
+        self.group_members_table.setColumnWidth(1, 350)  # 描述 - 宽一些
+        self.group_members_table.setColumnWidth(2, 60)   # 移除
+        
+        # 监听单元格点击事件
+        self.group_members_table.cellClicked.connect(lambda row, col: print(f"[TEST] 点击事件触发: 行={row}, 列={col}") or self._on_member_cell_clicked(row, col))
+        
+        # 测试连接是否成功
+        print(f"[DEBUG] 组内成员表格点击事件已连接，表格行数: {self.group_members_table.rowCount()}")
+        
+        self.group_members_table.setMinimumHeight(400)  # 增加最小高度
+        members_layout.addWidget(self.group_members_table)
+        
+        # 成就按钮
+        members_btn_layout = QHBoxLayout()
+        members_btn_layout.addStretch()
+        
+        add_member_btn = QPushButton("添加成就")
+        add_member_btn.setStyleSheet(get_button_style(config.theme))
+        add_member_btn.clicked.connect(self._add_group_member)
+        members_btn_layout.addWidget(add_member_btn)
+        
+
+        
+        members_layout.addLayout(members_btn_layout)
+        groups_layout.addWidget(members_group, 3)  # 设置占比为3，占据更多空间
+        
+        layout.addLayout(groups_layout)
+        
+        # 工具按钮
+        tools_layout = QHBoxLayout()
+        tools_layout.addStretch()
+        
+
+        
+        layout.addLayout(tools_layout)
+        
+        # 连接表格点击事件
+        self.groups_table.cellClicked.connect(self._on_group_cell_clicked)
+        
+        return widget
+    
+    def _load_achievement_groups(self):
+        """加载成就组数据"""
+        # 保存当前选中的组ID
+        selected_group_id = None
+        if hasattr(self, 'groups_table') and self.groups_table.rowCount() > 0:
+            current_row = self.groups_table.currentRow()
+            if current_row >= 0:
+                group_id_item = self.groups_table.item(current_row, 0)
+                if group_id_item:
+                    selected_group_id = group_id_item.text()
+        
+        # 获取所有成就数据
+        achievements = config.load_base_achievements()
+        print(f"[DEBUG] 加载了 {len(achievements)} 个成就数据")
+        
+        # 收集所有成就组
+        groups = {}
+        group_count = 0
+        for achievement in achievements:
+            group_id = achievement.get('成就组ID')
+            if group_id:
+                group_count += 1
+                print(f"[DEBUG] 找到成就组 {group_id}: {achievement.get('名称', '')}")
+                if group_id not in groups:
+                    groups[group_id] = {
+                        'id': group_id,
+                        'name': self._generate_group_name(group_id),  # 自动生成友好的组名
+                        'members': []
+                    }
+                groups[group_id]['members'].append(achievement)
+        
+        print(f"[DEBUG] 共找到 {group_count} 个有组ID的成就，{len(groups)} 个不同的组")
+        for group_id, group_info in groups.items():
+            print(f"[DEBUG] 组 {group_id}: 名称={group_info['name']}, 成员数={len(group_info['members'])}")
+        
+        # 按组ID排序（按数字顺序）
+        sorted_groups = sorted(groups.items(), key=lambda x: int(x[0].split('_')[1]) if x[0].startswith('group_') else 0)
+        
+        # 填充表格
+        self.groups_table.setRowCount(len(sorted_groups))
+        selected_row = -1
+        for i, (group_id, group_info) in enumerate(sorted_groups):
+            # 组名称（只读）
+            name_item = QTableWidgetItem(group_info['name'])
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 移除可编辑标志
+            # 存储组ID作为用户数据，用于后续操作
+            name_item.setData(Qt.ItemDataRole.UserRole, group_id)
+            print(f"[DEBUG] 设置表格项: 行={i}, 组ID={group_id}, 组名称={group_info['name']}")
+            self.groups_table.setItem(i, 0, name_item)
+            
+            # 如果这个组之前被选中，记录新的行号
+            if group_id == selected_group_id:
+                selected_row = i
+        
+        # 恢复选中状态
+        if selected_row >= 0:
+            self.groups_table.setCurrentCell(selected_row, 0)
+        elif len(groups) > 0:
+            # 如果没有之前选中的组，但有组存在，选中第一行
+            self.groups_table.setCurrentCell(0, 0)
+        
+        # 手动触发一次选择变化事件，确保成员列表正确更新
+        if self.groups_table.rowCount() > 0:
+            # 使用延迟调用，确保表格状态完全更新后再触发选择事件
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(50, lambda: self._on_group_cell_clicked(0, 0) if self.groups_table.rowCount() > 0 else None)
+    
+    def _generate_group_name(self, group_id):
+        """根据组ID生成友好的组名"""
+        if group_id.startswith('group_'):
+            try:
+                # 提取数字部分
+                number = int(group_id.split('_')[1])
+                return f"成就组 {number}"
+            except (IndexError, ValueError):
+                pass
+        # 如果不是标准格式，返回原ID
+        return group_id
+    
+    
+    
+    def _on_group_cell_clicked(self, row, column):
+        """当点击成就组时更新右侧成员列表"""
+        # 确保表格存在
+        if not hasattr(self, 'groups_table') or self.groups_table.rowCount() == 0:
+            self.current_group_label.setText("未选择")
+            self.group_members_table.setRowCount(0)
+            print("[DEBUG] 成就组表格为空")
+            return
+        
+        current_row = row
+        print(f"[DEBUG] 点击行: {current_row}, 总行数: {self.groups_table.rowCount()}")
+        
+        if current_row < 0:
+            # 如果没有点击任何行，清空显示
+                self.current_group_label.setText("未选择")
+                self.group_members_table.setRowCount(0)
+                print("[DEBUG] 没有数据，清空显示")
+                return
+        
+        name_item = self.groups_table.item(current_row, 0)
+        if not name_item:
+            self.current_group_label.setText("未选择")
+            self.group_members_table.setRowCount(0)
+            print("[DEBUG] 无法获取组名称项")
+            return
+        
+        group_id = name_item.data(Qt.ItemDataRole.UserRole)
+        if not group_id:
+            self.current_group_label.setText("未选择")
+            self.group_members_table.setRowCount(0)
+            print("[DEBUG] 无法获取组ID")
+            return
+        
+        # 显示组名称而不是组ID
+        group_name = name_item.text()
+        self.current_group_label.setText(group_name)
+        print(f"[DEBUG] 选择的组: ID={group_id}, 名称={group_name}")
+        print(f"[DEBUG] 选择的组ID: {group_id}")
+        
+        # 加载该组的所有成员
+        try:
+            achievements = config.load_base_achievements()
+            members = []
+            for achievement in achievements:
+                if achievement.get('成就组ID') == group_id:
+                    members.append(achievement)
+            
+            print(f"[DEBUG] 组 {group_id} 有 {len(members)} 个成员")
+            
+            # 填充成员表格
+            self.group_members_table.setRowCount(len(members))
+            for i, member in enumerate(members):
+                # 名称 - 使用原始名称（不带组标识）
+                display_name = member.get('原始名称', '') or member.get('名称', '')
+                name_item = QTableWidgetItem(display_name)
+                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 不可编辑
+                name_item.setData(Qt.ItemDataRole.UserRole, member.get('编号', ''))  # 存储编号用于后续操作
+                self.group_members_table.setItem(i, 0, name_item)
+                
+                # 描述
+                desc = member.get('描述', '')
+                if len(desc) > 100:  # 增加描述显示长度
+                    desc = desc[:100] + "..."
+                desc_item = QTableWidgetItem(desc)
+                desc_item.setFlags(desc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 不可编辑
+                self.group_members_table.setItem(i, 1, desc_item)
+                
+                # 移除 - 显示为可点击的文本
+                remove_item = QTableWidgetItem("移除")
+                remove_item.setFlags(remove_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 不可编辑
+                remove_item.setForeground(QColor(255, 69, 0))  # 红橙色文字
+                remove_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)  # 居中显示
+                self.group_members_table.setItem(i, 2, remove_item)
+        except Exception as e:
+            print(f"[ERROR] 加载组成员失败: {e}")
+            self.current_group_label.setText("加载失败")
+            self.group_members_table.setRowCount(0)
+    
+    def _add_achievement_group(self):
+        """添加成就组"""
+        from core.custom_message_box import CustomMessageBox
+        
+        # 生成组ID和名称
+        existing_groups = set()
+        for row in range(self.groups_table.rowCount()):
+            name_item = self.groups_table.item(row, 0)
+            if name_item:
+                group_id = name_item.data(Qt.ItemDataRole.UserRole)
+                if group_id and group_id.startswith('group_'):
+                    try:
+                        num = int(group_id.split('_')[1])
+                        existing_groups.add(num)
+                        print(f"[DEBUG] 找到现有组: ID={group_id}, 编号={num}")
+                    except:
+                        pass
+        
+        # 找到下一个可用的编号
+        next_num = 1
+        while next_num in existing_groups:
+            next_num += 1
+        
+        group_id = f"group_{next_num:03d}"
+        group_name = f"成就组 {next_num}"
+        
+        print(f"[DEBUG] 创建新组: ID={group_id}, 名称={group_name}, 现有组编号: {sorted(existing_groups)}")
+        
+        # 添加新行
+        row = self.groups_table.rowCount()
+        self.groups_table.insertRow(row)
+        
+        # 组名称（可编辑）
+        name_item = QTableWidgetItem(group_name)
+        name_item.setFlags(name_item.flags() | Qt.ItemFlag.ItemIsEditable)
+        # 存储组ID作为用户数据，用于后续操作
+        name_item.setData(Qt.ItemDataRole.UserRole, group_id)
+        self.groups_table.setItem(row, 0, name_item)
+        
+        # 选中新行
+        self.groups_table.selectRow(row)
+    
+    def _delete_achievement_group(self):
+        """删除成就组"""
+        from core.custom_message_box import CustomMessageBox
+        
+        current_row = self.groups_table.currentRow()
+        if current_row < 0:
+            CustomMessageBox.warning(self, "警告", "请先选择要删除的成就组")
+            return
+        
+        name_item = self.groups_table.item(current_row, 0)
+        if not name_item:
+            return
+        
+        group_id = name_item.data(Qt.ItemDataRole.UserRole)
+        if not group_id:
+            return
+        
+        # 确认删除
+        reply = CustomMessageBox.question(self, "确认", f"确定要删除成就组 '{group_id}' 吗？\n这将清除所有相关成就的组信息。")
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # 从表格中删除
+        self.groups_table.removeRow(current_row)
+        
+        # 清除成就数据中的组信息
+        achievements = config.load_base_achievements()
+        modified = False
+        for achievement in achievements:
+            if achievement.get('成就组ID') == group_id:
+                achievement.pop('成就组ID', None)
+                achievement.pop('互斥成就', None)
+                modified = True
+        
+        if modified:
+            config.save_base_achievements(achievements)
+            # 重新加载成就组表格
+            self._load_achievement_groups()
+            CustomMessageBox.information(self, "成功", f"成就组 '{group_id}' 已删除")
+        
+        # 清空成员列表
+        self.group_members_table.setRowCount(0)
+        self.current_group_label.setText("未选择")
+    
+    def _on_member_cell_clicked(self, row, column):
+        """处理成员表格单元格点击事件"""
+        print(f"[DEBUG] _on_member_cell_clicked 被调用: 行={row}, 列={column}")
+        if column == 2:  # 只处理移除列的点击
+            code_item = self.group_members_table.item(row, 0)
+            if code_item:
+                code = code_item.data(Qt.ItemDataRole.UserRole)  # 从UserRole获取编号
+                # 获取当前选中行的实际group_id
+                current_row = self.groups_table.currentRow()
+                if current_row >= 0:
+                    name_item = self.groups_table.item(current_row, 0)
+                    if name_item:
+                        group_id = name_item.data(Qt.ItemDataRole.UserRole)
+                        print(f"[DEBUG] 准备移除成就: {code}, 组ID: {group_id}")
+                        if group_id:
+                            self._remove_achievement_from_group(group_id, code)
+    
+    def _fix_group_mutex_relations(self, group_id, achievements):
+        """修复组内成就的互斥关系"""
+        # 获取组内所有成员
+        group_members = []
+        for achievement in achievements:
+            if achievement.get('成就组ID') == group_id:
+                group_members.append(achievement['编号'])
+        
+        # 为每个成员设置互斥列表
+        for achievement in achievements:
+            if achievement.get('成就组ID') == group_id:
+                code = achievement['编号']
+                # 互斥列表是组内其他所有成员
+                mutex_list = [m for m in group_members if m != code]
+                achievement['互斥成就'] = mutex_list
+    
+    def _load_group_members(self, group_id):
+        """只加载指定组的成员"""
+        try:
+            achievements = config.load_base_achievements()
+            members = []
+            for achievement in achievements:
+                if achievement.get('成就组ID') == group_id:
+                    members.append(achievement)
+            
+            print(f"[DEBUG] 组 {group_id} 有 {len(members)} 个成员")
+            
+            # 填充成员表格
+            self.group_members_table.setRowCount(len(members))
+            for i, member in enumerate(members):
+                # 名称 - 使用原始名称（不带组标识）
+                display_name = member.get('原始名称', '') or member.get('名称', '')
+                name_item = QTableWidgetItem(display_name)
+                name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 不可编辑
+                name_item.setData(Qt.ItemDataRole.UserRole, member.get('编号', ''))  # 存储编号用于后续操作
+                self.group_members_table.setItem(i, 0, name_item)
+                
+                # 描述
+                desc = member.get('描述', '')
+                if len(desc) > 100:  # 增加描述显示长度
+                    desc = desc[:100] + "..."
+                desc_item = QTableWidgetItem(desc)
+                desc_item.setFlags(desc_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 不可编辑
+                self.group_members_table.setItem(i, 1, desc_item)
+                
+                # 移除 - 显示为可点击的文本
+                remove_item = QTableWidgetItem("移除")
+                remove_item.setFlags(remove_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # 不可编辑
+                remove_item.setForeground(QColor(255, 69, 0))  # 红橙色文字
+                remove_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)  # 居中显示
+                self.group_members_table.setItem(i, 2, remove_item)
+        except Exception as e:
+            print(f"[ERROR] 加载组成员失败: {e}")
+    
+    def _add_group_member(self):
+        """添加组内成就"""
+        current_row = self.groups_table.currentRow()
+        if current_row < 0:
+            from core.custom_message_box import CustomMessageBox
+            CustomMessageBox.warning(self, "警告", "请先选择一个成就组")
+            return
+        
+        name_item = self.groups_table.item(current_row, 0)
+        if not name_item:
+            return
+        
+        group_id = name_item.data(Qt.ItemDataRole.UserRole)
+        if not group_id:
+            return
+        
+        # 显示成就选择对话框
+        dialog = AchievementSelectionDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_achievements = dialog.get_selected_achievements()
+            if selected_achievements:
+                self._add_achievements_to_group(group_id, selected_achievements)
+    
+    def _add_achievements_to_group(self, group_id, achievements):
+        """将成就添加到组中"""
+        from core.custom_message_box import CustomMessageBox
+        
+        print(f"[DEBUG] 开始添加 {len(achievements)} 个成就到组 {group_id}")
+        
+        # 加载当前成就数据
+        all_achievements = config.load_base_achievements()
+        print(f"[DEBUG] 加载了 {len(all_achievements)} 个成就")
+        
+        # 获取当前组的所有成员
+        current_members = []
+        for achievement in all_achievements:
+            if achievement.get('成就组ID') == group_id:
+                current_members.append(achievement['编号'])
+        print(f"[DEBUG] 组 {group_id} 当前有 {len(current_members)} 个成员: {current_members}")
+        
+        # 显示要添加的成就
+        for achievement in achievements:
+            print(f"[DEBUG] 要添加的成就: {achievement.get('编号', '')} - {achievement.get('名称', '')}")
+        
+        # 添加新成员
+        modified = False
+        added_count = 0
+        for achievement in achievements:
+            code = achievement['编号']
+            print(f"[DEBUG] 处理成就 {code}")
+            if code not in current_members:
+                # 为每个成就添加组信息
+                for full_achievement in all_achievements:
+                    if full_achievement['编号'] == code:
+                        print(f"[DEBUG] 找到成就 {code}，设置组ID为 {group_id}")
+                        full_achievement['成就组ID'] = group_id
+                        # 互斥成就列表将在修复时自动生成
+                        modified = True
+                        added_count += 1
+                        break
+                else:
+                    print(f"[ERROR] 未找到编号为 {code} 的成就")
+            else:
+                print(f"[DEBUG] 成就 {code} 已在组中")
+        
+        print(f"[DEBUG] 添加了 {added_count} 个新成就，修改状态: {modified}")
+        
+        if modified:
+            print(f"[DEBUG] 开始修复组 {group_id} 的互斥关系")
+            # 修复互斥关系
+            self._fix_group_mutex_relations(group_id, all_achievements)
+            # 保存数据
+            print(f"[DEBUG] 保存成就数据")
+            config.save_base_achievements(all_achievements)
+            # 刷新显示
+            print(f"[DEBUG] 重新加载成就组表格")
+            self._load_achievement_groups()  # 重新加载成就组表格（会自动刷新成员列表）
+        else:
+            print(f"[DEBUG] 没有成就被添加到组 {group_id}")
+    
+
+    
+    
+    
+    def _remove_member_at_row(self, row):
+        """移除指定行的成员"""
+        code_item = self.group_members_table.item(row, 0)
+        if not code_item:
+            return
+        
+        code = code_item.text()
+        group_id = self.current_group_label.text()
+        
+        self._remove_achievement_from_group(group_id, code)
+    
+    def _remove_achievement_from_group(self, group_id, code):
+        """从组中移除成就"""
+        from core.custom_message_box import CustomMessageBox
+        
+        print(f"[DEBUG] 开始移除成就: {code} 从组 {group_id}")
+        
+        # 确认删除
+        group_name = self.current_group_label.text()
+        print(f"[DEBUG] 显示确认对话框，组名: {group_name}")
+        reply = CustomMessageBox.question(self, "确认", f"确定要将成就 '{code}' 从组 '{group_name}' 中移除吗？")
+        print(f"[DEBUG] 确认对话框返回值: {reply}, CustomMessageBox.Yes={CustomMessageBox.Yes}")
+        if reply != CustomMessageBox.Yes:
+            print(f"[DEBUG] 用户取消移除成就")
+            return
+        print(f"[DEBUG] 用户确认移除成就")
+        
+        # 加载成就数据
+        print(f"[DEBUG] 开始加载成就数据")
+        achievements = config.load_base_achievements()
+        print(f"[DEBUG] 加载了 {len(achievements)} 个成就")
+        modified = False
+        
+        # 移除组信息
+        print(f"[DEBUG] 查找成就: code='{code}', group_id='{group_id}'")
+        for i, achievement in enumerate(achievements):
+            if i < 5:  # 只打印前5个，避免日志过长
+                print(f"[DEBUG] 成就{i}: 编号='{achievement.get('编号', '')}', 组ID='{achievement.get('成就组ID', '')}'")
+            if achievement['编号'] == code and achievement.get('成就组ID') == group_id:
+                print(f"[DEBUG] 找到成就 {code}，正在移除组信息")
+                achievement.pop('成就组ID', None)
+                achievement.pop('互斥成就', None)
+                modified = True
+                break
+        
+        if not modified:
+            print(f"[DEBUG] 警告：未找到要移除的成就 {code} 在组 {group_id} 中")
+            return
+        
+        print(f"[DEBUG] 成就信息已修改，开始处理组内剩余成员")
+        # 检查组内剩余成员数量，如果只有1个成员则解散该组
+        remaining_members = [a for a in achievements if a.get('成就组ID') == group_id]
+        print(f"[DEBUG] 组 {group_id} 剩余成员数量: {len(remaining_members)}")
+        if len(remaining_members) <= 1:
+            # 解散该组，清除剩余成员的组信息
+            print(f"[DEBUG] 解散组 {group_id}")
+            for achievement in remaining_members:
+                achievement.pop('成就组ID', None)
+                achievement.pop('互斥成就', None)
+        else:
+            # 修复组内剩余成员的互斥关系
+            print(f"[DEBUG] 修复组 {group_id} 的互斥关系")
+            self._fix_group_mutex_relations(group_id, achievements)
+        
+        # 保存数据
+        print(f"[DEBUG] 开始保存成就数据")
+        config.save_base_achievements(achievements)
+        print(f"[DEBUG] 成就数据已保存")
+        # 刷新显示 - 只刷新当前组，避免触发完整重新加载
+        print(f"[DEBUG] 开始刷新当前组显示")
+        current_row = self.groups_table.currentRow()
+        if current_row >= 0:
+            # 重新加载当前组的成员
+            name_item = self.groups_table.item(current_row, 0)
+            if name_item:
+                group_id = name_item.data(Qt.ItemDataRole.UserRole)
+                self._load_group_members(group_id)
+        print(f"[DEBUG] 当前组显示已刷新")
+    
+    
+
+    
+    def _on_tab_changed(self, index):
+        """处理tab切换事件"""
+        # 获取当前tab的标题
+        tab_text = self.tab_widget.tabText(index)
+        
+        # 如果切换到成就组管理tab，重新加载数据
+        if "成就组管理" in tab_text:
+            if hasattr(self, 'groups_table'):
+                self._load_achievement_groups()
+                # _load_achievement_groups已经处理了选中状态，会自动调用_on_group_selection_changed
     
     def _add_first_category_row(self):
         """在第一分类表格中添加空白行"""
@@ -1065,6 +1721,233 @@ class TemplateSettingsDialog(QDialog):
             )
             import traceback
             traceback.print_exc()
+
+
+class AchievementSelectionDialog(QDialog):
+    """成就选择对话框"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("选择成就")
+        self.setModal(True)
+        self.setFixedSize(800, 600)
+        
+        # 设置无边框窗口
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        from core.config import config
+        self.setStyleSheet(get_dialog_style(config.theme))
+        
+        # 加载背景图片
+        from core.widgets import load_background_image, BackgroundWidget
+        self.background_pixmap = load_background_image(config.theme)
+        
+        # 创建带背景的中央部件
+        central_widget = BackgroundWidget(self.background_pixmap, config.theme)
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 添加自定义标题栏
+        from core.custom_title_bar import CustomTitleBar
+        self.title_bar = CustomTitleBar(self)
+        layout.addWidget(self.title_bar)
+        
+        # 内容区域
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        content_layout.setSpacing(15)
+        layout.addWidget(content_widget)
+        
+        # 保存布局引用
+        self.main_layout = content_layout
+        
+        self.selected_achievements = []
+        self._init_ui()
+        self._load_achievements()
+        
+        # 设置中央部件
+        self.setLayout(QVBoxLayout())
+        self.layout().addWidget(central_widget)
+    
+    def _init_ui(self):
+        """初始化UI"""
+        from core.styles import get_text_input_style, get_label_style
+        
+        # 搜索框
+        search_layout = QHBoxLayout()
+        search_label = QLabel("搜索：")
+        search_label.setStyleSheet(get_label_style(config.theme))
+        search_layout.addWidget(search_label)
+        
+        self.search_edit = QLineEdit()
+        self.search_edit.setStyleSheet(get_text_input_style(config.theme))
+        self.search_edit.textChanged.connect(self._filter_achievements)
+        search_layout.addWidget(self.search_edit)
+        self.main_layout.addLayout(search_layout)
+        
+        # 成就列表
+        self.achievements_table = QTableWidget()
+        self.achievements_table.setColumnCount(5)
+        self.achievements_table.setHorizontalHeaderLabels(["", "编号", "名称", "描述", "分类"])
+        self.achievements_table.horizontalHeader().setStretchLastSection(True)
+        self.achievements_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.achievements_table.setAlternatingRowColors(True)
+        
+        # 去掉网格线（包括竖线）
+        self.achievements_table.setShowGrid(False)
+        
+        # 去掉选中框和焦点
+        self.achievements_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.achievements_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)  # 完全禁止选择
+        
+        # 应用滚动条样式
+        from core.styles import get_scrollbar_style
+        self.achievements_table.setStyleSheet(self.achievements_table.styleSheet() + get_scrollbar_style(config.theme))
+        
+        self.main_layout.addWidget(self.achievements_table)
+        
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        from core.styles import get_button_style
+        select_all_btn = QPushButton("全选")
+        select_all_btn.setStyleSheet(get_button_style(config.theme))
+        select_all_btn.clicked.connect(self._select_all)
+        button_layout.addWidget(select_all_btn)
+        
+        clear_btn = QPushButton("清空")
+        clear_btn.setStyleSheet(get_button_style(config.theme))
+        clear_btn.clicked.connect(self._clear_selection)
+        button_layout.addWidget(clear_btn)
+        
+        ok_btn = QPushButton("确定")
+        ok_btn.setStyleSheet(get_button_style(config.theme))
+        ok_btn.clicked.connect(lambda: self.done(QDialog.DialogCode.Accepted))
+        button_layout.addWidget(ok_btn)
+        
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setStyleSheet(get_button_style(config.theme))
+        cancel_btn.clicked.connect(lambda: self.done(QDialog.DialogCode.Rejected))
+        button_layout.addWidget(cancel_btn)
+        
+        self.main_layout.addLayout(button_layout)
+    
+    def _load_achievements(self):
+        """加载成就数据"""
+        from core.config import config
+        achievements = config.load_base_achievements()
+        
+        # 过滤掉已经有组的成就
+        available_achievements = []
+        for achievement in achievements:
+            if not achievement.get('成就组ID'):
+                available_achievements.append(achievement)
+        
+        self.all_achievements = available_achievements
+        self._display_achievements(available_achievements)
+    
+    def _display_achievements(self, achievements):
+        """显示成就列表"""
+        self.achievements_table.setRowCount(len(achievements))
+        self.current_displayed_achievements = achievements  # 保存当前显示的成就列表
+        
+        for i, achievement in enumerate(achievements):
+            # 复选框
+            checkbox = QCheckBox()
+            # 检查是否已选中
+            if achievement in self.selected_achievements:
+                checkbox.setChecked(True)
+            checkbox.stateChanged.connect(lambda state, row=i: self._on_checkbox_changed(row, state))
+            self.achievements_table.setCellWidget(i, 0, checkbox)
+            
+            # 编号
+            self.achievements_table.setItem(i, 1, QTableWidgetItem(achievement.get('编号', '')))
+            
+            # 名称
+            self.achievements_table.setItem(i, 2, QTableWidgetItem(achievement.get('名称', '')))
+            
+            # 描述
+            desc = achievement.get('描述', '')
+            if len(desc) > 100:
+                desc = desc[:100] + "..."
+            self.achievements_table.setItem(i, 3, QTableWidgetItem(desc))
+            
+            # 分类
+            first_cat = achievement.get('第一分类', '')
+            second_cat = achievement.get('第二分类', '')
+            category = f"{first_cat} > {second_cat}" if first_cat and second_cat else first_cat or second_cat
+            self.achievements_table.setItem(i, 4, QTableWidgetItem(category))
+    
+    def _filter_achievements(self):
+        """过滤成就"""
+        search_text = self.search_edit.text().lower()
+        
+        if not search_text:
+            self._display_achievements(self.all_achievements)
+            return
+        
+        filtered = []
+        for achievement in self.all_achievements:
+            if (search_text in achievement.get('名称', '').lower() or
+                search_text in achievement.get('描述', '').lower() or
+                search_text in achievement.get('编号', '').lower()):
+                filtered.append(achievement)
+        
+        self._display_achievements(filtered)
+    
+    def _on_checkbox_changed(self, row, state):
+        """复选框状态改变"""
+        if hasattr(self, 'current_displayed_achievements'):
+            achievement = self.current_displayed_achievements[row]
+        else:
+            achievement = self.all_achievements[row]
+            
+        if state == 2:  # 选中
+            if achievement not in self.selected_achievements:
+                self.selected_achievements.append(achievement)
+        else:  # 取消选中
+            if achievement in self.selected_achievements:
+                self.selected_achievements.remove(achievement)
+    
+    def _select_all(self):
+        """全选"""
+        # 选择当前显示的所有成就
+        if hasattr(self, 'current_displayed_achievements'):
+            display_achievements = self.current_displayed_achievements
+        else:
+            display_achievements = self.all_achievements
+            
+        # 添加到已选择列表（避免重复）
+        for achievement in display_achievements:
+            if achievement not in self.selected_achievements:
+                self.selected_achievements.append(achievement)
+        
+        # 更新所有复选框
+        for i in range(self.achievements_table.rowCount()):
+            checkbox = self.achievements_table.cellWidget(i, 0)
+            if checkbox:
+                checkbox.blockSignals(True)
+                checkbox.setChecked(True)
+                checkbox.blockSignals(False)
+    
+    def _clear_selection(self):
+        """清空选择"""
+        self.selected_achievements = []
+        
+        # 更新所有复选框
+        for i in range(self.achievements_table.rowCount()):
+            checkbox = self.achievements_table.cellWidget(i, 0)
+            if checkbox:
+                checkbox.blockSignals(True)
+                checkbox.setChecked(False)
+                checkbox.blockSignals(False)
+    
+    def get_selected_achievements(self):
+        """获取选中的成就"""
+        return self.selected_achievements
         
     
     
