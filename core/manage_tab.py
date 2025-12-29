@@ -118,6 +118,12 @@ class AchievementManager:
                 continue
             elif obtainable == "暂不可获取" and achievement.get('获取状态', '') != "暂不可获取":
                 continue
+            elif obtainable == "多选一":
+                # 只显示成就组，显示所有组成员
+                group_id = achievement.get('成就组ID')
+                if not group_id:
+                    # 非成就组的成就不显示
+                    continue
             
             self.filtered_achievements.append(achievement)
         
@@ -136,9 +142,35 @@ class AchievementManager:
     
     def get_statistics(self):
         """获取统计信息"""
-        total = len(self.achievements)
-        completed = sum(1 for a in self.achievements if a.get('获取状态') == '已完成')
-        hidden = sum(1 for a in self.achievements if a.get('is_hidden'))
+        # 正确统计总计（考虑成就组）
+        total_groups = set()
+        total_achievements = 0
+        for achievement in self.achievements:
+            group_id = achievement.get('成就组ID')
+            if group_id:
+                total_groups.add(group_id)
+            else:
+                total_achievements += 1
+        total = len(total_groups) + total_achievements
+        
+        # 正确统计完成数（考虑成就组）
+        completed = 0
+        processed_groups = set()
+        for achievement in self.achievements:
+            status = achievement.get('获取状态', '')
+            group_id = achievement.get('成就组ID')
+            
+            if status == '已完成':
+                if group_id:
+                    # 成就组：只计算一次
+                    if group_id not in processed_groups:
+                        completed += 1
+                        processed_groups.add(group_id)
+                else:
+                    # 普通成就
+                    completed += 1
+        
+        hidden = sum(1 for a in self.achievements if a.get('是否隐藏') == '隐藏')
         
         return {
             'total': total,
@@ -231,6 +263,7 @@ class ManageTab(QWidget):
         self.obtainable_filter.addItem("全部")
         self.obtainable_filter.addItem("可获取")
         self.obtainable_filter.addItem("暂不可获取")
+        self.obtainable_filter.addItem("多选一")
         self.obtainable_filter.setFixedWidth(100)
         self.obtainable_filter.currentTextChanged.connect(self.filter_data)
         filter_layout.addWidget(self.obtainable_filter)
@@ -370,6 +403,14 @@ class ManageTab(QWidget):
         # 隐藏成就
         self.hidden_label = QLabel("🙈 隐藏成就: 0")
         stats_layout.addWidget(self.hidden_label)
+        
+        # 暂不可获取
+        self.unavailable_label = QLabel("🚫 暂不可获取: 0")
+        stats_layout.addWidget(self.unavailable_label)
+        
+        # 多选一
+        self.multi_choice_label = QLabel("🎯 多选一: 0")
+        stats_layout.addWidget(self.multi_choice_label)
         
         stats_layout.addStretch()
         layout.addWidget(stats_group)
@@ -518,6 +559,25 @@ class ManageTab(QWidget):
             hidden_type, priority, obtainable
         )
         
+        # 在多选一模式下，为每个成就添加组标识
+        if obtainable == "多选一":
+            # 为筛选后的成就添加组标识（保存原始名称）
+            for achievement in filtered:
+                group_id = achievement.get('成就组ID')
+                if group_id:
+                    # 简单的组标识
+                    group_number = group_id.split('_')[1] if '_' in group_id else '1'
+                    original_name = achievement.get('原始名称', '') or achievement.get('名称', '')
+                    # 保存原始名称
+                    achievement['原始名称'] = original_name
+                    # 修改显示名称
+                    achievement['名称'] = f"[{group_number}] {original_name}"
+        else:
+            # 恢复原始名称
+            for achievement in filtered:
+                if '原始名称' in achievement:
+                    achievement['名称'] = achievement['原始名称']
+        
         # 更新表格
         self.manager_table.load_data(filtered)
         
@@ -529,15 +589,106 @@ class ManageTab(QWidget):
         if data is None:
             data = self.manager.filtered_achievements
         
-        total = len(data)
-        completed = sum(1 for a in data if a.get('获取状态') == '已完成')
-        incomplete = sum(1 for a in data if a.get('获取状态') in ['', '未完成'])
-        hidden = sum(1 for a in data if a.get('是否隐藏') == '隐藏')
+        # 正确统计总计（考虑成就组）
+        total_groups = set()
+        total_achievements = 0
+        for achievement in data:
+            group_id = achievement.get('成就组ID')
+            if group_id:
+                total_groups.add(group_id)
+            else:
+                total_achievements += 1
+        total = len(total_groups) + total_achievements
+        
+        # 统计每个成就组的状态
+        group_status = {}  # group_id -> {'status': 'completed'/'incomplete'/'unavailable', 'has_hidden': bool}
+        for achievement in data:
+            status = achievement.get('获取状态', '') or '未完成'
+            group_id = achievement.get('成就组ID')
+            is_hidden = achievement.get('是否隐藏') == '隐藏'
+            
+            if group_id:
+                if group_id not in group_status:
+                    group_status[group_id] = {'status': status, 'has_hidden': is_hidden}
+                else:
+                    # 更新状态：已完成 > 暂不可获取 > 未完成
+                    current = group_status[group_id]['status']
+                    if status == '已完成' or (status == '暂不可获取' and current != '已完成'):
+                        group_status[group_id]['status'] = status
+                    if is_hidden:
+                        group_status[group_id]['has_hidden'] = True
+        
+        # 统计已完成（考虑成就组）
+        completed = 0
+        for group_id, info in group_status.items():
+            if info['status'] == '已完成':
+                completed += 1
+        
+        # 统计普通已完成成就
+        for achievement in data:
+            if achievement.get('获取状态', '') == '已完成' and not achievement.get('成就组ID'):
+                completed += 1
+        
+        # 统计未完成（考虑成就组）
+        incomplete = 0
+        for group_id, info in group_status.items():
+            if info['status'] == '未完成':
+                incomplete += 1
+        
+        # 统计普通未完成成就
+        for achievement in data:
+            status = achievement.get('获取状态', '') or '未完成'
+            if status == '未完成' and not achievement.get('成就组ID'):
+                incomplete += 1
+        
+        # 统计隐藏成就（考虑成就组）
+        hidden = 0
+        processed_hidden_groups = set()
+        for achievement in data:
+            is_hidden = achievement.get('是否隐藏') == '隐藏'
+            group_id = achievement.get('成就组ID')
+            
+            if is_hidden:
+                if group_id:
+                    # 成就组：只计算一次
+                    if group_id not in processed_hidden_groups:
+                        hidden += 1
+                        processed_hidden_groups.add(group_id)
+                else:
+                    # 普通成就
+                    hidden += 1
+        
+        # 统计暂不可获取数量（考虑成就组）
+        unavailable = 0
+        processed_unavailable_groups = set()
+        for achievement in data:
+            status = achievement.get('获取状态', '')
+            group_id = achievement.get('成就组ID')
+            
+            if status == '暂不可获取':
+                if group_id:
+                    # 成就组：只计算一次
+                    if group_id not in processed_unavailable_groups:
+                        unavailable += 1
+                        processed_unavailable_groups.add(group_id)
+                else:
+                    # 普通成就
+                    unavailable += 1
+        
+        # 统计多选一数量（每个组只计算一次）
+        multi_choice_groups = set()
+        for achievement in data:
+            group_id = achievement.get('成就组ID')
+            if group_id:
+                multi_choice_groups.add(group_id)
+        multi_choice_count = len(multi_choice_groups)
         
         self.total_label.setText(f"📊 总计: {total}")
         self.completed_label.setText(f"✅ 已完成: {completed}")
         self.incomplete_label.setText(f"⭕ 未完成: {incomplete}")
         self.hidden_label.setText(f"🙈 隐藏成就: {hidden}")
+        self.unavailable_label.setText(f"🚫 暂不可获取: {unavailable}")
+        self.multi_choice_label.setText(f"🎯 多选一成就: {multi_choice_count}")
     
     def open_settings(self):
         """打开设置对话框"""
@@ -915,8 +1066,19 @@ class ManageTab(QWidget):
             current_user_data = users.get(current_user, {})
             uid = current_user_data.get('uid', current_user) if isinstance(current_user_data, dict) else current_user
             
-            # 保存基础成就数据
-            if config.save_base_achievements(self.manager.achievements):
+            # 保存基础成就数据（恢复原始名称）
+            achievements_to_save = []
+            for achievement in self.manager.achievements:
+                # 创建副本，避免修改原始数据
+                achievement_copy = achievement.copy()
+                # 如果有原始名称，恢复它
+                if '原始名称' in achievement_copy:
+                    achievement_copy['名称'] = achievement_copy['原始名称']
+                    # 删除临时字段
+                    del achievement_copy['原始名称']
+                achievements_to_save.append(achievement_copy)
+            
+            if config.save_base_achievements(achievements_to_save):
                 print("[SUCCESS] 基础成就数据已保存")
             
             # 准备用户进度数据
