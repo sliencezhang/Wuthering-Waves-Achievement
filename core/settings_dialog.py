@@ -69,7 +69,7 @@ class TemplateSettingsDialog(QDialog):
             ("👤 用户管理", self._create_user_tab),
             ("🎨 外观设置", self._create_appearance_tab),
             ("📂 分类管理", self._create_category_tab),
-            ("🎯 成就组管理", self._create_achievement_group_tab)
+            ("🎯 多选一管理", self._create_achievement_group_tab)
         ]
 
         for name, creator in tabs:
@@ -805,7 +805,7 @@ class TemplateSettingsDialog(QDialog):
         layout = QVBoxLayout(widget)
         
         # 说明文字
-        info_label = QLabel("管理成就组配置，设置互斥成就关系")
+        info_label = QLabel("管理多选一配置，设置多选一成就关系")
         info_label.setStyleSheet(get_settings_desc_style(config.theme))
         layout.addWidget(info_label)
         

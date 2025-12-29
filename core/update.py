@@ -217,6 +217,15 @@ class UpdateChecker:
                 # 版本发生变化，需要重新检查更新
                 return self._check_and_cache()
             
+            # 首先检查缓存时间
+            cache_time = datetime.fromisoformat(cache_data.get('timestamp', '2000-01-01'))
+            now = datetime.now()
+            
+            # 如果缓存超过24小时，重新检查
+            if now - cache_time > timedelta(hours=24):
+                print("缓存过期，重新检查...")
+                return self._check_and_cache()
+            
             # 检查版本一致性
             if cached_latest_version:
                 # 如果当前版本等于缓存中的最新版本，说明已经是最新版本
@@ -227,15 +236,6 @@ class UpdateChecker:
                     update_info['has_update'] = False
                     update_info['is_latest'] = True
                     return update_info
-            
-            # 检查缓存时间
-            cache_time = datetime.fromisoformat(cache_data.get('timestamp', '2000-01-01'))
-            now = datetime.now()
-            
-            # 如果缓存超过24小时，重新检查
-            if now - cache_time > timedelta(hours=24):
-                print("缓存过期，重新检查...")
-                return self._check_and_cache()
             
             # 使用缓存，但确保current_version是最新的
             update_info['current_version'] = self.current_version
