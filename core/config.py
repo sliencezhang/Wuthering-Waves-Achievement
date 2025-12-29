@@ -210,6 +210,13 @@ class Config:
                     "奖励": achievement.get("奖励", ""),
                     "是否隐藏": achievement.get("是否隐藏", "")
                 }
+                
+                # 添加成就组相关字段（如果有）
+                if achievement.get("成就组ID"):
+                    base_achievement["成就组ID"] = achievement.get("成就组ID")
+                if achievement.get("互斥成就"):
+                    base_achievement["互斥成就"] = achievement.get("互斥成就")
+                    
                 base_data.append(base_achievement)
             
             with open(base_file, 'w', encoding='utf-8') as f:
@@ -414,6 +421,9 @@ class Config:
                         abs_id_mapping[old_abs_id] = new_abs_id
                         print(f"[DEBUG] 绝对编号映射: {old_abs_id} -> {new_abs_id}")
             
+            # 更新成就组的互斥成就列表
+            self._update_achievement_groups_mutex_relations(reencoded_achievements, id_mapping)
+            
             # 按绝对编号排序后再保存基础数据
             sorted_achievements = sorted(reencoded_achievements, key=lambda x: int(x.get('绝对编号', '0')))
             
@@ -465,6 +475,41 @@ class Config:
         except Exception as e:
             print(f"[ERROR] 重新编码用户进度数据失败: {str(e)}")
             return False
+    
+    def _update_achievement_groups_mutex_relations(self, achievements, id_mapping):
+        """更新成就组的互斥成就列表"""
+        try:
+            # 收集所有成就组
+            groups = {}
+            for achievement in achievements:
+                group_id = achievement.get('成就组ID')
+                if group_id:
+                    if group_id not in groups:
+                        groups[group_id] = []
+                    groups[group_id].append(achievement)
+            
+            # 为每个成就组更新互斥关系
+            updated_groups = 0
+            for group_id, members in groups.items():
+                if len(members) < 2:
+                    continue  # 至少需要2个成员才有互斥关系
+                
+                # 获取组内所有成员的新编号
+                member_codes = [member.get('编号', '') for member in members]
+                
+                # 为每个成员更新互斥列表
+                for member in members:
+                    current_code = member.get('编号', '')
+                    # 互斥列表 = 组内其他成员的新编号
+                    mutex_list = [code for code in member_codes if code != current_code]
+                    member['互斥成就'] = mutex_list
+                
+                updated_groups += 1
+            
+            print(f"[INFO] 已更新 {updated_groups} 个成就组的互斥关系")
+            
+        except Exception as e:
+            print(f"[ERROR] 更新成就组互斥关系失败: {str(e)}")
 
 
 # 创建全局配置实例
