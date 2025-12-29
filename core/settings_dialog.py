@@ -1774,6 +1774,7 @@ class AchievementSelectionDialog(QDialog):
     def _init_ui(self):
         """初始化UI"""
         from core.styles import get_text_input_style, get_label_style
+        from PySide6.QtWidgets import QCheckBox
         
         # 搜索框
         search_layout = QHBoxLayout()
@@ -1851,6 +1852,8 @@ class AchievementSelectionDialog(QDialog):
     
     def _display_achievements(self, achievements):
         """显示成就列表"""
+        from PySide6.QtWidgets import QCheckBox
+        
         self.achievements_table.setRowCount(len(achievements))
         self.current_displayed_achievements = achievements  # 保存当前显示的成就列表
         
@@ -1864,22 +1867,38 @@ class AchievementSelectionDialog(QDialog):
             self.achievements_table.setCellWidget(i, 0, checkbox)
             
             # 编号
-            self.achievements_table.setItem(i, 1, QTableWidgetItem(achievement.get('编号', '')))
+            code_item = QTableWidgetItem(achievement.get('编号', ''))
+            code_item.setToolTip(achievement.get('编号', ''))
+            self.achievements_table.setItem(i, 1, code_item)
             
             # 名称
-            self.achievements_table.setItem(i, 2, QTableWidgetItem(achievement.get('名称', '')))
+            name_item = QTableWidgetItem(achievement.get('名称', ''))
+            name_item.setToolTip(achievement.get('名称', ''))
+            self.achievements_table.setItem(i, 2, name_item)
             
             # 描述
-            desc = achievement.get('描述', '')
+            full_desc = achievement.get('描述', '')
+            desc = full_desc
             if len(desc) > 100:
                 desc = desc[:100] + "..."
-            self.achievements_table.setItem(i, 3, QTableWidgetItem(desc))
+            desc_item = QTableWidgetItem(desc)
+            desc_item.setToolTip(full_desc)  # 悬浮显示完整描述
+            self.achievements_table.setItem(i, 3, desc_item)
             
             # 分类
             first_cat = achievement.get('第一分类', '')
             second_cat = achievement.get('第二分类', '')
             category = f"{first_cat} > {second_cat}" if first_cat and second_cat else first_cat or second_cat
-            self.achievements_table.setItem(i, 4, QTableWidgetItem(category))
+            category_item = QTableWidgetItem(category)
+            category_item.setToolTip(category)
+            self.achievements_table.setItem(i, 4, category_item)
+        
+        # 设置列宽 - 调整列宽（保留用户要求的调整）
+        self.achievements_table.setColumnWidth(0, 40)   # 复选框列 - 缩短
+        self.achievements_table.setColumnWidth(1, 80)   # 编号列
+        self.achievements_table.setColumnWidth(2, 130)  # 名称列
+        self.achievements_table.setColumnWidth(3, 260)  # 描述列 - 加宽
+        self.achievements_table.setColumnWidth(4, 130)  # 分类列 - 缩短三分之一
     
     def _filter_achievements(self):
         """过滤成就"""
