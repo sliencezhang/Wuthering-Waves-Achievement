@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 import os
 import json
 
-from core.config import config
+from core.config import config, get_resource_path
 from core.styles import get_font_gray_style, get_button_style
 
 # 导入爬虫相关的类
@@ -691,12 +691,37 @@ class ManageTab(QWidget):
             
             # 数据清洗和转换
             print(f"[INFO] 开始数据清洗...")
+            print(f"[DEBUG] 总行数: {sheet.max_row}, 数据开始行: {data_start_row}")
+            print(f"[DEBUG] 列索引: {col_index}")
             achievements = []
             
             # 加载分类配置
-            category_config = config.load_category_config()
-            first_categories = category_config.get("first_categories", {})
-            second_categories = category_config.get("second_categories", {})
+            try:
+                # 确保config对象已正确初始化
+                if not hasattr(config, 'load_category_config'):
+                    print("[ERROR] config对象缺少load_category_config方法")
+                    raise Exception("配置对象未正确初始化")
+                
+                category_config = config.load_category_config()
+                if not isinstance(category_config, dict):
+                    print(f"[ERROR] category_config不是字典类型: {type(category_config)}")
+                    category_config = {}
+                
+                first_categories = category_config.get("first_categories", {})
+                second_categories = category_config.get("second_categories", {})
+                
+                # 确保返回的是字典
+                if not isinstance(first_categories, dict):
+                    first_categories = {}
+                if not isinstance(second_categories, dict):
+                    second_categories = {}
+                    
+            except Exception as e:
+                print(f"[ERROR] 加载分类配置失败: {str(e)}")
+                # 使用默认配置
+                first_categories = {}
+                second_categories = {}
+                print("[INFO] 使用默认分类配置")
             
             # 创建第二分类到第一分类的映射
             first_category_map = {}
@@ -704,19 +729,55 @@ class ManageTab(QWidget):
                 for second_cat in second_cats:
                     first_category_map[second_cat] = first_cat
             
+            # 预先扫描所有第二分类，检查是否有缺失的
+            missing_second_categories = set()
+            for row_idx, row in enumerate(sheet.iter_rows(min_row=data_start_row), start=data_start_row):
+                if not any(cell.value for cell in row):
+                    continue  # 跳过空行
+                
+                # 获取第二分类
+                if '第二分类' in col_index:
+                    second_category_value = row[col_index['第二分类']].value
+                    second_category = str(second_category_value).strip() if second_category_value else ''
+                    
+                    if row_idx <= data_start_row + 2:  # 只显示前几行的调试信息
+                        print(f"[DEBUG] 预扫描第{row_idx}行，第二分类: '{second_category}'")
+                        print(f"[DEBUG] 预扫描第{row_idx}行，是否在first_category_map中: {second_category in first_category_map}")
+                    
+                    if second_category and second_category not in first_category_map:
+                        missing_second_categories.add(second_category)
+                        if row_idx <= data_start_row + 2:
+                            print(f"[DEBUG] 预扫描第{row_idx}行：发现缺失的第二分类 '{second_category}'")
+            
+            # 如果有缺失的第二分类，提示用户
+            if missing_second_categories:
+                missing_list = '\n'.join(f'• {cat}' for cat in sorted(missing_second_categories))
+                from core.custom_message_box import CustomMessageBox
+                reply = CustomMessageBox.warning(
+                    self,
+                    "发现缺失的分类",
+                    f"Excel文件中发现以下第二分类未在分类管理中配置：\n\n{missing_list}\n\n请先在设置→分类管理中添加这些分类，然后重新导入。",
+                    ("确定",)
+                )
+                print(f"[WARNING] 发现缺失的第二分类: {missing_second_categories}")
+                return  # 中断导入
+            
             # 从数据开始行读取数据
             for row_idx, row in enumerate(sheet.iter_rows(min_row=data_start_row), start=data_start_row):
                 if not any(cell.value for cell in row):
                     continue  # 跳过空行
                 
+                if row_idx <= data_start_row + 2:  # 只显示前几行的调试信息
+                    print(f"[DEBUG] 处理第{row_idx}行，数据: {[cell.value for cell in row]}")
+                
                 achievement = {}
                 
-                # 1. 绝对编号列
+                # 1. 绝对编号列：暂时不生成，在最后统一重新生成
+                abs_id = ''
                 if '绝对编号' in col_index:
                     abs_id_value = row[col_index['绝对编号']].value
-                    achievement['绝对编号'] = str(abs_id_value).strip() if abs_id_value else ''
-                else:
-                    achievement['绝对编号'] = ''
+                    abs_id = str(abs_id_value).strip() if abs_id_value else ''
+                achievement['绝对编号'] = abs_id
                 
                 # 2. 名称列：去除「隐藏成就」
                 name_value = row[col_index['名称']].value
@@ -728,11 +789,6 @@ class ManageTab(QWidget):
                 # 3. 描述列
                 desc_value = row[col_index['描述']].value if '描述' in col_index else ''
                 description = str(desc_value).strip() if desc_value else ''
-                if description:
-                    # 使用正则表达式判断文本最后一位是否为字符
-                    import re
-                    if re.search(r'[\w\u4e00-\u9fff]$', description):
-                        description += '。'
                 achievement['描述'] = description
                 
                 # 4. 版本列：智能处理小数
@@ -760,38 +816,51 @@ class ManageTab(QWidget):
                 else:
                     achievement['是否隐藏'] = ''
                 
-                # 7. 第一分类列
-                if '第一分类' in col_index:
-                    first_category_value = row[col_index['第一分类']].value
-                    first_category = str(first_category_value).strip() if first_category_value else ''
-                    if first_category:
-                        achievement['第一分类'] = first_category
-                    else:
-                        # 根据第二分类映射获取第一分类
-                        second_category_value = row[col_index['第二分类']].value
-                        second_category = str(second_category_value).strip() if second_category_value else ''
-                        first_category = first_category_map.get(second_category, '')
-                        achievement['第一分类'] = first_category
-                else:
-                    # 根据第二分类映射获取第一分类
-                    second_category_value = row[col_index['第二分类']].value
-                    second_category = str(second_category_value).strip() if second_category_value else ''
-                    first_category = first_category_map.get(second_category, '')
-                    achievement['第一分类'] = first_category
-                
-                # 8. 第二分类列：必须有
+                # 7. 第二分类列：必须有
                 second_category_value = row[col_index['第二分类']].value
                 second_category = str(second_category_value).strip() if second_category_value else ''
                 if not second_category:
                     raise Exception(f"第{row_idx}行：第二分类不能为空")
                 achievement['第二分类'] = second_category
                 
-                # 9. 编号列
+                # 8. 第一分类列：如果为空，根据第二分类映射自动补充
+                first_category = ''
+                has_first_category_column = '第一分类' in col_index
+                
+                if has_first_category_column:
+                    first_category_value = row[col_index['第一分类']].value
+                    first_category = str(first_category_value).strip() if first_category_value else ''
+
+                # 如果第一分类为空，根据第二分类映射获取第一分类
+                if not first_category:
+                    print(f"[DEBUG] 第{row_idx}行：尝试为第二分类 '{second_category}' 查找第一分类")
+                    print(f"[DEBUG] 第{row_idx}行：first_category_map包含的分类: {list(first_category_map.keys())}")
+                    
+                    # 尝试精确匹配
+                    first_category = first_category_map.get(second_category, '')
+                    
+                    # 如果精确匹配失败，尝试去除空格后匹配
+                    if not first_category:
+                        trimmed_second_category = second_category.strip()
+                        first_category = first_category_map.get(trimmed_second_category, '')
+                        if first_category:
+                            print(f"[DEBUG] 第{row_idx}行：去除空格后匹配成功")
+                    
+                    if first_category:
+                        print(f"[INFO] 第{row_idx}行：自动补充第一分类 '{first_category}'")
+                    else:
+                        print(f"[WARNING] 第{row_idx}行：无法找到第二分类 '{second_category}' 对应的第一分类")
+                
+                achievement['第一分类'] = first_category
+                
+                # 9. 编号列：暂时不生成，在最后统一重新生成
+                serial_number = ''
                 if '编号' in col_index:
                     serial_value = row[col_index['编号']].value
-                    achievement['编号'] = str(serial_value).strip() if serial_value else ''
-                else:
-                    achievement['编号'] = ''
+                    serial_number = str(serial_value).strip() if serial_value else ''
+                
+                # 编号列：暂时不生成，在最后统一重新生成
+                achievement['编号'] = serial_number
                 
                 # 10. 获取状态列
                 if '获取状态' in col_index:
@@ -838,19 +907,53 @@ class ManageTab(QWidget):
             for achievement in achievements:
                 # 创建基础成就副本（不包含获取状态）
                 base_achievement = achievement.copy()
+                # 只删除获取状态，保留其他所有字段（包括成就组ID和互斥成就）
                 if '获取状态' in base_achievement:
                     del base_achievement['获取状态']
                 base_achievements.append(base_achievement)
                 
                 # 如果有获取状态，添加到用户进度
-                if achievement.get('获取状态') and achievement.get('绝对编号'):
-                    user_progress[achievement['绝对编号']] = {
-                        'status': achievement['获取状态'],
-                        'timestamp': ''  # 可以添加时间戳
-                    }
+                # 使用编号作为键（用户进度文件使用编号）
+                if achievement.get('获取状态'):
+                    serial_number = achievement.get('编号', '')
+                    if serial_number:
+                        user_progress[serial_number] = {
+                            '获取状态': achievement['获取状态']
+                        }
+            
+            # 重新生成编号和绝对编号（与爬虫保持一致）
+            print("[INFO] 正在重新生成编号和绝对编号...")
+            base_achievements = self._smart_reencode_achievements(base_achievements)
+            print("[SUCCESS] 编号和绝对编号重新生成完成")
+            
+            # 将用户进度映射到新的编号
+            if user_progress:
+                updated_user_progress = {}
+                for achievement in base_achievements:
+                    serial_number = achievement.get('编号', '')
+                    if serial_number and serial_number in user_progress:
+                        updated_user_progress[serial_number] = {
+                            '获取状态': user_progress[serial_number]['获取状态']
+                        }
+                    else:
+                        # 检查是否是名称+描述的临时键
+                        name = achievement.get('名称', '')
+                        desc = achievement.get('描述', '')
+                        key = f"{name}|{desc}"
+                        
+                        if key in user_progress:
+                            serial_number = achievement.get('编号', '')
+                            if serial_number:
+                                updated_user_progress[serial_number] = {
+                                    'status': user_progress[key]['status'],
+                                    'timestamp': user_progress[key]['timestamp']
+                                }
+                
+                user_progress = updated_user_progress
+                print(f"[INFO] 用户进度已映射到新的编号，共 {len(user_progress)} 条")
             
             # 保存基础成就数据
-            base_file = config.get_resource_path("resources") / "base_achievements.json"
+            base_file = get_resource_path("resources/base_achievements.json")
             with open(base_file, 'w', encoding='utf-8') as f:
                 json.dump(base_achievements, f, ensure_ascii=False, indent=2)
             
@@ -862,6 +965,23 @@ class ManageTab(QWidget):
             self.manager.achievements = base_achievements
             self.manager.filtered_achievements = base_achievements.copy()
             
+            # 调试：检查第一分类是否正确补充
+            for i, achievement in enumerate(base_achievements[:3]):
+                print(f"[DEBUG] 保存前成就{i+1}: 第一分类='{achievement.get('第一分类', '空')}', 第二分类='{achievement.get('第二分类', '空')}'")
+            
+            # 将用户进度状态合并到基础成就数据中，用于表格显示
+            if user_progress:
+                for achievement in base_achievements:
+                    serial_number = achievement.get('编号', '')
+                    if serial_number and serial_number in user_progress:
+                        achievement['获取状态'] = user_progress[serial_number]['获取状态']
+                    else:
+                        achievement['获取状态'] = '未完成'
+            else:
+                # 如果没有用户进度，全部设为未完成
+                for achievement in base_achievements:
+                    achievement['获取状态'] = '未完成'
+            
             # 更新表格显示
             self.manager_table.load_data(base_achievements)
             
@@ -870,6 +990,27 @@ class ManageTab(QWidget):
             
             # 更新统计
             self.update_statistics()
+            
+            print(f"[SUCCESS] Excel导入完成，共 {len(base_achievements)} 条基础成就，{len(user_progress)} 条用户进度")
+            
+            # 检查是否有缺失的分类，如果有则中断导入
+            if hasattr(self, 'missing_categories') and self.missing_categories:
+                missing_list = sorted(list(self.missing_categories))
+                missing_str = "、".join(missing_list)
+                
+                # 显示错误提示，中断导入
+                error_msg = f"发现未配置的第二分类: {missing_str}\n\n"
+                error_msg += "请在 设置→分类管理 中将这些分类添加到对应的第一分类下，然后重新导入。"
+                
+                print(f"[ERROR] 导入中断：发现未配置的分类: {missing_str}")
+                print(f"[INFO] 请在 设置→分类管理 中添加这些分类后重新导入")
+                
+                # 显示错误提示
+                from core.custom_message_box import CustomMessageBox
+                CustomMessageBox.warning(self, "导入中断", error_msg)
+                
+                # 不更新数据，保持原状
+                return
             
             print(f"[SUCCESS] Excel导入完成，共 {len(base_achievements)} 条基础成就，{len(user_progress)} 条用户进度")
             show_notification(self, f"导入成功，共 {len(base_achievements)} 条成就数据")
@@ -1362,9 +1503,16 @@ class ManageTab(QWidget):
         
         # 获取分类配置
         from core.config import config
-        category_config = config.load_category_config()
-        first_categories = category_config.get("first_categories", {})
-        second_categories = category_config.get("second_categories", {})
+        try:
+            category_config = config.load_category_config()
+            if not isinstance(category_config, dict):
+                category_config = {}
+            first_categories = category_config.get("first_categories", {})
+            second_categories = category_config.get("second_categories", {})
+        except Exception as e:
+            print(f"[ERROR] 加载分类配置失败: {str(e)}")
+            first_categories = {}
+            second_categories = {}
         
         def get_sort_key(achievement):
             """获取排序键"""
@@ -1389,6 +1537,12 @@ class ManageTab(QWidget):
             
             return (first_order, second_order, version, original_id)
         
+        # 创建第二分类到第一分类的映射
+        first_category_map = {}
+        for first_cat, second_cats in second_categories.items():
+            for second_cat in second_cats:
+                first_category_map[second_cat] = first_cat
+        
         # 按新规则排序
         sorted_achievements = sorted(achievements, key=get_sort_key)
         
@@ -1397,6 +1551,13 @@ class ManageTab(QWidget):
         for achievement in sorted_achievements:
             first_cat = achievement.get('第一分类', '')
             second_cat = achievement.get('第二分类', '')
+            
+            # 如果第一分类为空，根据第二分类映射自动补充
+            if not first_cat and second_cat:
+                first_cat = first_category_map.get(second_cat, '')
+                if first_cat:
+                    achievement['第一分类'] = first_cat
+                    print(f"[INFO] 自动补充第一分类 '{first_cat}' 用于第二分类 '{second_cat}'")
             
             if not first_cat or not second_cat:
                 achievement['编号'] = ''
@@ -1572,8 +1733,22 @@ class ManageTab(QWidget):
         for version in sorted_versions:
             self.version_filter.addItem(version)
         
-        # 获取分类配置
-        category_config = config.load_category_config()
+# 获取分类配置
+        try:
+            category_config = config.load_category_config()
+            if not isinstance(category_config, dict):
+                category_config = {}
+        except Exception as e:
+            print(f"[ERROR] 加载分类配置失败: {str(e)}")
+            # 尝试直接访问属性
+            try:
+                if hasattr(config, 'category_config'):
+                    category_config = getattr(config, 'category_config', {})
+                else:
+                    category_config = {}
+            except:
+                category_config = {}
+            print("[INFO] 使用备用配置加载方式")
         first_category_order = category_config.get("first_categories", {})
         
         # 更新第一分类下拉框（按配置顺序）
