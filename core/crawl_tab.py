@@ -14,9 +14,9 @@ import os
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.worksheet.datavalidation import DataValidation
 
 from core.config import config
+from core.manage_tab import show_notification
 from core.signal_bus import signal_bus
 from core.styles import (get_button_style, get_font_gray_style)
 
@@ -710,10 +710,22 @@ class CrawlTab(QWidget):
                     target_version = f"{sorted_versions[0]}-{sorted_versions[-1]}"
         
         if target_version:
-            from core.config import config
-            config.crawl_settings["default_output_file"] = f"鸣潮v{target_version}爬取数据.json"
-            config.save_config()
-            print(f"[INFO] 已更新默认输出文件名为: 鸣潮v{target_version}爬取数据.json")
+            try:
+                from core.config import config
+                # 确保crawl_settings属性存在
+                if not hasattr(config, 'crawl_settings'):
+                    config.crawl_settings = {}
+                
+                config.crawl_settings["default_output_file"] = f"鸣潮v{target_version}爬取数据.json"
+                
+                # 确保save_config方法存在
+                if hasattr(config, 'save_config'):
+                    config.save_config()
+                    print(f"[INFO] 已更新默认输出文件名为: 鸣潮v{target_version}爬取数据.json")
+                else:
+                    print("[WARNING] config对象缺少save_config方法")
+            except Exception as e:
+                print(f"[ERROR] 更新配置失败: {str(e)}")
         
         print(f"[SUCCESS] 爬取完成，共 {len(achievements)} 条数据")
         
@@ -786,10 +798,19 @@ class CrawlTab(QWidget):
         current_achievements = manage_tab.manager.achievements
         
         # 创建名称+描述的组合键，用于精确判断重复
+        # 去掉描述末尾符号后再比较
+        import re
+        def clean_description(desc):
+            """去掉描述末尾的标点符号"""
+            if not desc:
+                return desc
+            # 去掉末尾的标点符号：。，；：！？、
+            return re.sub(r'[.,…。，；：！？、]+$', '', desc).strip()
+        
         current_achievements_keys = set()
         for a in current_achievements:
             name = a.get('名称', '')
-            desc = a.get('描述', '')
+            desc = clean_description(a.get('描述', ''))
             key = (name, desc)  # 使用元组作为组合键
             current_achievements_keys.add(key)
         
@@ -798,7 +819,7 @@ class CrawlTab(QWidget):
         
         for achievement in self.achievements:
             name = achievement.get('名称', '')
-            desc = achievement.get('描述', '')
+            desc = clean_description(achievement.get('描述', ''))
             key = (name, desc)
             
             if key not in current_achievements_keys:
@@ -1232,7 +1253,7 @@ class CrawlTab(QWidget):
             
             # 添加示例数据表头
             example_headers_row = example_title_row + 1
-            example_headers = ['名称', '描述', '版本', '奖励', '是否隐藏', '第一分类', '第二分类']
+            example_headers = ['名称', '描述', '奖励', '版本', '是否隐藏', '第一分类', '第二分类']
             for col, header in enumerate(example_headers, 1):
                 cell = sheet.cell(row=example_headers_row, column=col, value=header)
                 cell.font = Font(bold=True)
@@ -1243,9 +1264,9 @@ class CrawlTab(QWidget):
             
             # 添加示例数据行
             example_data = [
-                ['我们相信漂泊者', '重建拉海洛的全部路网。', '3', '10', '', '索拉漫行', '索拉的大地·拉海洛'],
-                ['请勿剐蹭', '在拉海洛路网上与车辆发生碰撞。', '3', '5', '隐藏', '索拉漫行', '索拉的大地·拉海洛'],
-                ['心无妄虑', '完成「全息战略·同步」的「无妄者I」。', '3.0', '星声*5', '', '铿锵刃鸣', '来自深塔·二']
+                ['我们相信漂泊者', '重建拉海洛的全部路网。', '10', '3', '', '索拉漫行', '索拉的大地·拉海洛'],
+                ['请勿剐蹭', '在拉海洛路网上与车辆发生碰撞。', '5', '3', '隐藏', '索拉漫行', '索拉的大地·拉海洛'],
+                ['心无妄虑', '完成「全息战略·同步」的「无妄者I」。', '星声*5', '3.0', '', '铿锵刃鸣', '来自深塔·二']
             ]
             
             for row_idx, row_data in enumerate(example_data, example_headers_row + 1):
@@ -1315,9 +1336,32 @@ class CrawlTab(QWidget):
             cleaned_achievements = []
             
             # 加载分类配置
-            category_config = config.load_category_config()
-            first_categories = category_config.get("first_categories", {})
-            second_categories = category_config.get("second_categories", {})
+            try:
+                # 确保config对象已正确初始化
+                if not hasattr(config, 'load_category_config'):
+                    print("[ERROR] config对象缺少load_category_config方法")
+                    raise Exception("配置对象未正确初始化")
+                
+                category_config = config.load_category_config()
+                if not isinstance(category_config, dict):
+                    print(f"[ERROR] category_config不是字典类型: {type(category_config)}")
+                    category_config = {}
+                
+                first_categories = category_config.get("first_categories", {})
+                second_categories = category_config.get("second_categories", {})
+                
+                # 确保返回的是字典
+                if not isinstance(first_categories, dict):
+                    first_categories = {}
+                if not isinstance(second_categories, dict):
+                    second_categories = {}
+                    
+            except Exception as e:
+                print(f"[ERROR] 加载分类配置失败: {str(e)}")
+                # 使用默认配置
+                first_categories = {}
+                second_categories = {}
+                print("[INFO] 使用默认分类配置")
             
             # 创建第二分类到第一分类的映射
             first_category_map = {}
@@ -1342,12 +1386,6 @@ class CrawlTab(QWidget):
                 # 2. 描述列
                 desc_value = row[col_index['描述']].value if '描述' in col_index else ''
                 description = str(desc_value).strip() if desc_value else ''
-                if description:
-                    # 使用正则表达式判断文本最后一位是否为字符
-                    import re
-                    # 正则匹配：以字符（中文、英文、数字）结尾
-                    if re.search(r'[\w\u4e00-\u9fff]$', description):
-                        description += '。'
                 achievement['描述'] = description
                 
                 # 3. 版本列：智能处理小数
@@ -1395,17 +1433,48 @@ class CrawlTab(QWidget):
                     else:
                         # 根据第二分类映射获取第一分类
                         first_category = first_category_map.get(second_category, '')
-                        if not first_category:
-                            raise Exception(f"第{row_idx}行：无法根据第二分类'{second_category}'找到对应的第一分类")
-                        achievement['第一分类'] = first_category
+                        if first_category:
+                            achievement['第一分类'] = first_category
+                        else:
+                            # 如果找不到对应的第一分类，收集所有缺失的分类
+                            if not hasattr(self, 'missing_categories'):
+                                self.missing_categories = set()
+                            self.missing_categories.add(second_category)
+                            continue  # 跳过这一行，继续检查下一行
                 else:
                     # 根据第二分类映射获取第一分类
                     first_category = first_category_map.get(second_category, '')
-                    if not first_category:
-                        raise Exception(f"第{row_idx}行：无法根据第二分类'{second_category}'找到对应的第一分类")
-                    achievement['第一分类'] = first_category
+                    if first_category:
+                        achievement['第一分类'] = first_category
+                    else:
+                        # 如果找不到对应的第一分类，收集所有缺失的分类
+                        if not hasattr(self, 'missing_categories'):
+                            self.missing_categories = set()
+                        self.missing_categories.add(second_category)
+                        continue  # 跳过这一行，继续检查下一行
                 
                 cleaned_achievements.append(achievement)
+            
+            # 检查是否有缺失的分类
+            if hasattr(self, 'missing_categories') and self.missing_categories:
+                missing_list = sorted(list(self.missing_categories))
+                missing_str = "、".join(missing_list)
+                
+                workbook.close()
+                
+                # 显示错误提示，中断导入
+                error_msg = f"发现未配置的第二分类: {missing_str}\n\n"
+                error_msg += "请在 设置→分类管理 中将这些分类添加到对应的第一分类下，然后重新导入。"
+                
+                print(f"[ERROR] 导入中断：发现未配置的分类: {missing_str}")
+                print(f"[INFO] 请在 设置→分类管理 中添加这些分类后重新导入")
+                
+                # 显示错误提示
+                from core.custom_message_box import CustomMessageBox
+                CustomMessageBox.warning(self, "导入中断", error_msg)
+                
+                # 不更新数据，保持原状
+                return
             
             workbook.close()
             
@@ -1417,7 +1486,16 @@ class CrawlTab(QWidget):
             self.merge_btn.setEnabled(True)
             
             print(f"[SUCCESS] 导入完成，共 {len(cleaned_achievements)} 条成就数据")
-            self.show_notification(f"导入成功，共 {len(cleaned_achievements)} 条成就数据")
+            
+            # 检查是否有缺失的分类需要提示用户
+            if hasattr(self, 'missing_categories') and self.missing_categories:
+                missing_list = sorted(list(self.missing_categories))
+                missing_str = "、".join(missing_list)
+                print(f"[INFO] 发现未配置的第二分类: {missing_str}")
+                print(f"[INFO] 请在 设置→分类管理 中将这些分类添加到对应的第一分类下")
+                self.show_notification(f"导入成功！发现未配置分类: {missing_str}，请在设置→分类管理中添加")
+            else:
+                self.show_notification(f"导入成功，共 {len(cleaned_achievements)} 条成就数据")
             
         except Exception as e:
             print(f"[ERROR] 导入Excel失败: {str(e)}")
@@ -1518,9 +1596,9 @@ class CrawlTab(QWidget):
             sheet = wb.active
             sheet.title = "成就数据"
             
-            # 定义列顺序（与范本保持一致）
+            # 定义列顺序（与GUI表格保持一致）
             column_order = [
-                '名称', '描述', '版本', '奖励', '是否隐藏', '第一分类', '第二分类'
+                '名称', '描述', '奖励', '版本', '是否隐藏', '第一分类', '第二分类'
             ]
             
             # 写入表头
