@@ -205,6 +205,8 @@ class ManageTab(QWidget):
         """主题切换时更新按钮样式"""
         from core.styles import get_button_style
         self.import_btn.setStyleSheet(get_button_style(theme))
+        self.import_excel_btn.setStyleSheet(get_button_style(theme))
+        self.export_excel_btn.setStyleSheet(get_button_style(theme))
         self.export_json_btn.setStyleSheet(get_button_style(theme))
         self.settings_btn.setStyleSheet(get_button_style(theme))
         self.help_btn.setStyleSheet(get_button_style(theme))
@@ -341,41 +343,53 @@ class ManageTab(QWidget):
         button_layout.setSpacing(5)
         button_layout.setContentsMargins(8, 5, 8, 5)
         
-        # 第一行：导入和导出按钮
-        top_row = QHBoxLayout()
-        top_row.setSpacing(5)
+        # 第一行：导入JSON、导出JSON、设置
+        first_row = QHBoxLayout()
+        first_row.setSpacing(5)
         self.import_btn = QPushButton("导入JSON")
         self.import_btn.setStyleSheet(get_button_style(config.theme))
         self.import_btn.clicked.connect(self.import_json)
-        self.import_btn.setFixedWidth(100)
-        top_row.addWidget(self.import_btn)
+        self.import_btn.setFixedWidth(80)
+        first_row.addWidget(self.import_btn)
         
         self.export_json_btn = QPushButton("导出JSON")
         self.export_json_btn.setStyleSheet(get_button_style(config.theme))
         self.export_json_btn.clicked.connect(self.export_full_json)
-        self.export_json_btn.setFixedWidth(100)
-        top_row.addWidget(self.export_json_btn)
-        top_row.addStretch()
+        self.export_json_btn.setFixedWidth(80)
+        first_row.addWidget(self.export_json_btn)
         
-        button_layout.addLayout(top_row)
-        
-        # 第二行：设置和帮助按钮
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(5)
         self.settings_btn = QPushButton("设置")
         self.settings_btn.setStyleSheet(get_button_style(config.theme))
         self.settings_btn.clicked.connect(self.open_settings)
-        self.settings_btn.setFixedWidth(100)
-        bottom_row.addWidget(self.settings_btn)
+        self.settings_btn.setFixedWidth(80)
+        first_row.addWidget(self.settings_btn)
+        first_row.addStretch()
+        
+        button_layout.addLayout(first_row)
+        
+        # 第二行：导入Excel、导出Excel、帮助
+        second_row = QHBoxLayout()
+        second_row.setSpacing(5)
+        self.import_excel_btn = QPushButton("导入Excel")
+        self.import_excel_btn.setStyleSheet(get_button_style(config.theme))
+        self.import_excel_btn.clicked.connect(self.import_excel)
+        self.import_excel_btn.setFixedWidth(80)
+        second_row.addWidget(self.import_excel_btn)
+        
+        self.export_excel_btn = QPushButton("导出Excel")
+        self.export_excel_btn.setStyleSheet(get_button_style(config.theme))
+        self.export_excel_btn.clicked.connect(self.export_excel)
+        self.export_excel_btn.setFixedWidth(80)
+        second_row.addWidget(self.export_excel_btn)
         
         self.help_btn = QPushButton("帮助")
         self.help_btn.setStyleSheet(get_button_style(config.theme))
         self.help_btn.clicked.connect(self.open_help)
-        self.help_btn.setFixedWidth(100)
-        bottom_row.addWidget(self.help_btn)
-        bottom_row.addStretch()
+        self.help_btn.setFixedWidth(80)
+        second_row.addWidget(self.help_btn)
+        second_row.addStretch()
         
-        button_layout.addLayout(bottom_row)
+        button_layout.addLayout(second_row)
         
         # 创建主水平布局，包含筛选区域和按钮区域
         main_filter_layout = QHBoxLayout()
@@ -589,6 +603,526 @@ class ManageTab(QWidget):
         if data is None:
             data = self.manager.filtered_achievements
         
+        # 使用统一的统计方法
+        statistics = self.calculate_statistics(data)
+        
+        self.total_label.setText(f"📊 总计: {statistics['total']}")
+        self.completed_label.setText(f"✅ 已完成: {statistics['completed']}")
+        self.incomplete_label.setText(f"⭕ 未完成: {statistics['incomplete']}")
+        self.hidden_label.setText(f"🙈 隐藏成就: {statistics['hidden']}")
+        self.unavailable_label.setText(f"🚫 暂不可获取: {statistics['unavailable']}")
+        self.multi_choice_label.setText(f"🎯 多选一成就: {statistics['multi_choice']}")
+    
+    def open_settings(self):
+        """打开设置对话框"""
+        from core.settings_dialog import TemplateSettingsDialog
+        dialog = TemplateSettingsDialog(self)
+        dialog.exec()
+    
+    def open_help(self):
+        """打开帮助对话框"""
+        from core.help_dialog import HelpDialog
+        dialog = HelpDialog(self)
+        dialog.exec()
+    
+    def import_excel(self):
+        """导入Excel文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "导入Excel文件", "", "Excel Files (*.xlsx *.xls)"
+        )
+        
+        if file_path:
+            try:
+                # 显示确认对话框
+                from core.custom_message_box import CustomMessageBox
+                reply = CustomMessageBox.question(
+                    self, 
+                    "确认导入", 
+                    "导入Excel将会覆盖当前的成就数据和用户进度数据，此操作不可撤销！\n\n确定要继续吗？",
+                    ("确定", "取消")
+                )
+                
+                if reply != CustomMessageBox.Yes:
+                    print("[INFO] 用户取消了Excel导入操作")
+                    return
+                
+                self.import_from_excel(file_path)
+            except Exception as e:
+                print(f"[ERROR] 导入Excel失败: {str(e)}")
+                show_notification(self, f"导入Excel失败: {str(e)}")
+    
+    def import_from_excel(self, excel_path):
+        """从Excel文件导入数据并转换为base_achievements和user_progress"""
+        try:
+            import openpyxl
+            
+            # 读取Excel文件
+            print(f"[INFO] 正在读取Excel文件: {excel_path}")
+            workbook = openpyxl.load_workbook(excel_path)
+            sheet = workbook.active
+            
+            # 检查第一行是否为时间信息行
+            first_row_values = [cell.value for cell in sheet[1]]
+            is_info_row = any("导出时间:" in str(val) or "用户:" in str(val) for val in first_row_values if val)
+            
+            # 根据第一行内容确定表头位置
+            if is_info_row:
+                # 第一行是信息行，表头在第二行
+                header_row = 2
+                data_start_row = 3
+            else:
+                # 第一行就是表头
+                header_row = 1
+                data_start_row = 2
+            
+            # 获取表头
+            headers = []
+            for cell in sheet[header_row]:
+                headers.append(cell.value)
+            
+            # 检查必要的列
+            required_columns = ['名称', '第二分类']
+            missing_columns = [col for col in required_columns if col not in headers]
+            if missing_columns:
+                raise Exception(f"缺少必要的列: {', '.join(missing_columns)}")
+            
+            # 创建列名到索引的映射
+            col_index = {header: idx for idx, header in enumerate(headers)}
+            
+            # 数据清洗和转换
+            print(f"[INFO] 开始数据清洗...")
+            achievements = []
+            
+            # 加载分类配置
+            category_config = config.load_category_config()
+            first_categories = category_config.get("first_categories", {})
+            second_categories = category_config.get("second_categories", {})
+            
+            # 创建第二分类到第一分类的映射
+            first_category_map = {}
+            for first_cat, second_cats in second_categories.items():
+                for second_cat in second_cats:
+                    first_category_map[second_cat] = first_cat
+            
+            # 从数据开始行读取数据
+            for row_idx, row in enumerate(sheet.iter_rows(min_row=data_start_row), start=data_start_row):
+                if not any(cell.value for cell in row):
+                    continue  # 跳过空行
+                
+                achievement = {}
+                
+                # 1. 绝对编号列
+                if '绝对编号' in col_index:
+                    abs_id_value = row[col_index['绝对编号']].value
+                    achievement['绝对编号'] = str(abs_id_value).strip() if abs_id_value else ''
+                else:
+                    achievement['绝对编号'] = ''
+                
+                # 2. 名称列：去除「隐藏成就」
+                name_value = row[col_index['名称']].value
+                name = str(name_value).strip() if name_value else ''
+                if '「隐藏成就」' in name:
+                    name = name.replace('「隐藏成就」', '').strip()
+                achievement['名称'] = name
+                
+                # 3. 描述列
+                desc_value = row[col_index['描述']].value if '描述' in col_index else ''
+                description = str(desc_value).strip() if desc_value else ''
+                if description:
+                    # 使用正则表达式判断文本最后一位是否为字符
+                    import re
+                    if re.search(r'[\w\u4e00-\u9fff]$', description):
+                        description += '。'
+                achievement['描述'] = description
+                
+                # 4. 版本列：智能处理小数
+                version_value = row[col_index['版本']].value if '版本' in col_index else ''
+                version = str(version_value).strip() if version_value else ''
+                if version:
+                    if '.' in version:
+                        pass  # 已经有小数点，保持原样
+                    else:
+                        version = f"{version}.0"
+                achievement['版本'] = version
+                
+                # 5. 奖励列：纯数字拼接"星声*"
+                reward_value = row[col_index['奖励']].value if '奖励' in col_index else ''
+                reward = str(reward_value).strip() if reward_value else ''
+                if reward.isdigit():
+                    reward = f"星声*{reward}"
+                achievement['奖励'] = reward
+                
+                # 6. 是否隐藏列：简化判断，只判断是否包含"隐藏"
+                if '是否隐藏' in col_index:
+                    hidden_value = row[col_index['是否隐藏']].value
+                    is_hidden = str(hidden_value).strip() if hidden_value else ''
+                    achievement['是否隐藏'] = '隐藏' if '隐藏' in is_hidden else ''
+                else:
+                    achievement['是否隐藏'] = ''
+                
+                # 7. 第一分类列
+                if '第一分类' in col_index:
+                    first_category_value = row[col_index['第一分类']].value
+                    first_category = str(first_category_value).strip() if first_category_value else ''
+                    if first_category:
+                        achievement['第一分类'] = first_category
+                    else:
+                        # 根据第二分类映射获取第一分类
+                        second_category_value = row[col_index['第二分类']].value
+                        second_category = str(second_category_value).strip() if second_category_value else ''
+                        first_category = first_category_map.get(second_category, '')
+                        achievement['第一分类'] = first_category
+                else:
+                    # 根据第二分类映射获取第一分类
+                    second_category_value = row[col_index['第二分类']].value
+                    second_category = str(second_category_value).strip() if second_category_value else ''
+                    first_category = first_category_map.get(second_category, '')
+                    achievement['第一分类'] = first_category
+                
+                # 8. 第二分类列：必须有
+                second_category_value = row[col_index['第二分类']].value
+                second_category = str(second_category_value).strip() if second_category_value else ''
+                if not second_category:
+                    raise Exception(f"第{row_idx}行：第二分类不能为空")
+                achievement['第二分类'] = second_category
+                
+                # 9. 编号列
+                if '编号' in col_index:
+                    serial_value = row[col_index['编号']].value
+                    achievement['编号'] = str(serial_value).strip() if serial_value else ''
+                else:
+                    achievement['编号'] = ''
+                
+                # 10. 获取状态列
+                if '获取状态' in col_index:
+                    status_value = row[col_index['获取状态']].value
+                    achievement['获取状态'] = str(status_value).strip() if status_value else ''
+                else:
+                    achievement['获取状态'] = ''
+                
+                # 11. 成就组ID列
+                if '成就组ID' in col_index:
+                    group_id_value = row[col_index['成就组ID']].value
+                    achievement['成就组ID'] = str(group_id_value).strip() if group_id_value else ''
+                else:
+                    achievement['成就组ID'] = ''
+                
+                # 12. 互斥成就列
+                if '互斥成就' in col_index:
+                    exclusive_value = row[col_index['互斥成就']].value
+                    if exclusive_value:
+                        # 如果是字符串，尝试分割
+                        if isinstance(exclusive_value, str):
+                            # 尝试按逗号、分号或空格分割
+                            import re
+                            parts = re.split(r'[,;，；\s]+', exclusive_value.strip())
+                            achievement['互斥成就'] = [part.strip() for part in parts if part.strip()]
+                        else:
+                            achievement['互斥成就'] = [str(exclusive_value)]
+                    else:
+                        achievement['互斥成就'] = []
+                else:
+                    achievement['互斥成就'] = []
+                
+                achievements.append(achievement)
+            
+            workbook.close()
+            
+            # 分离基础成就和用户进度
+            base_achievements = []
+            user_progress = {}
+            
+            # 获取当前用户
+            current_user = config.get_current_user()
+            
+            for achievement in achievements:
+                # 创建基础成就副本（不包含获取状态）
+                base_achievement = achievement.copy()
+                if '获取状态' in base_achievement:
+                    del base_achievement['获取状态']
+                base_achievements.append(base_achievement)
+                
+                # 如果有获取状态，添加到用户进度
+                if achievement.get('获取状态') and achievement.get('绝对编号'):
+                    user_progress[achievement['绝对编号']] = {
+                        'status': achievement['获取状态'],
+                        'timestamp': ''  # 可以添加时间戳
+                    }
+            
+            # 保存基础成就数据
+            base_file = config.get_resource_path("resources") / "base_achievements.json"
+            with open(base_file, 'w', encoding='utf-8') as f:
+                json.dump(base_achievements, f, ensure_ascii=False, indent=2)
+            
+            # 保存用户进度数据
+            if user_progress:
+                config.save_user_progress(current_user, user_progress)
+            
+            # 更新管理器的数据
+            self.manager.achievements = base_achievements
+            self.manager.filtered_achievements = base_achievements.copy()
+            
+            # 更新表格显示
+            self.manager_table.load_data(base_achievements)
+            
+            # 更新筛选器
+            self.update_filters()
+            
+            # 更新统计
+            self.update_statistics()
+            
+            print(f"[SUCCESS] Excel导入完成，共 {len(base_achievements)} 条基础成就，{len(user_progress)} 条用户进度")
+            show_notification(self, f"导入成功，共 {len(base_achievements)} 条成就数据")
+            
+        except Exception as e:
+            print(f"[ERROR] 导入Excel失败: {str(e)}")
+            raise Exception(f"导入Excel失败: {str(e)}")
+    
+    def export_excel(self):
+        """导出Excel文件（包含基础成就和用户进度）"""
+        # 获取动态文件名
+        dynamic_filename = self.get_dynamic_export_filename()
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出Excel文件", dynamic_filename, "Excel Files (*.xlsx)"
+        )
+        
+        if file_path:
+            try:
+                self.export_to_excel(file_path)
+            except Exception as e:
+                print(f"[ERROR] 导出Excel失败: {str(e)}")
+                show_notification(self, f"导出Excel失败: {str(e)}")
+    
+    def export_to_excel(self, file_path):
+        """将基础成就和用户进度合并导出为Excel"""
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+            
+            # 创建工作簿
+            workbook = openpyxl.Workbook()
+            sheet = workbook.active
+            sheet.title = "成就数据"
+            
+            # 获取基础成就数据
+            base_achievements = config.load_base_achievements()
+            
+            # 获取当前用户进度数据
+            current_user = config.get_current_user()
+            user_progress = config.load_user_progress(current_user)
+            
+            # 创建用户进度映射
+            progress_map = {item.get('绝对编号', ''): item.get('获取状态', '') 
+                          for item in self.manager.achievements if item.get('绝对编号')}
+            
+            # 合并数据
+            merged_data = []
+            for achievement in base_achievements:
+                merged_item = achievement.copy()
+                # 添加获取状态
+                abs_id = achievement.get('绝对编号', '')
+                merged_item['获取状态'] = progress_map.get(abs_id, '')
+                merged_data.append(merged_item)
+            
+            # 定义列顺序
+            column_order = [
+                '绝对编号', '版本', '第一分类', '第二分类', '编号', 
+                '名称', '描述', '奖励', '是否隐藏', '获取状态',
+                '成就组ID', '互斥成就'
+            ]
+            
+            # 在第一行添加导出时间信息，使用与统计信息相同的逻辑
+            current_user = config.get_current_user()
+            users = config.get_users()
+            user_data = users.get(current_user, {})
+            uid = user_data.get('uid', current_user) if isinstance(user_data, dict) else current_user
+            statistics = self.calculate_statistics(merged_data)
+            info_text = f"导出时间: {self.get_current_time()} | 用户: {current_user} | UID: {uid} | 成就总数: {statistics['total']} | 已完成: {statistics['completed']} | 未完成: {statistics['incomplete']} | 隐藏成就: {statistics['hidden']} | 暂不可获取: {statistics['unavailable']} | 多选一成就: {statistics['multi_choice']}"
+            info_cell = sheet.cell(row=1, column=1, value=info_text)
+            info_cell.font = Font(size=10, color="666666")
+            info_cell.alignment = Alignment(horizontal="left", vertical="center")
+            # 合并信息单元格
+            sheet.merge_cells(start_row=1, start_column=1, 
+                            end_row=1, end_column=len(column_order))
+            
+            # 设置表头（现在在第二行）
+            for col, header in enumerate(column_order, 1):
+                cell = sheet.cell(row=2, column=col, value=header)
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+            
+            # 填充数据（从第三行开始）
+            for row_idx, item in enumerate(merged_data, 3):
+                for col_idx, field_name in enumerate(column_order, 1):
+                    value = item.get(field_name, '')
+                    
+                    # 特殊处理互斥成就列 - 保持数组格式，但Excel中显示为逗号分隔的字符串
+                    if field_name == '互斥成就' and isinstance(value, list):
+                        # 使用逗号分隔，这样导入时可以正确解析
+                        value = ', '.join(str(item) for item in value) if value else ''
+                    
+                    cell = sheet.cell(row=row_idx, column=col_idx, value=str(value))
+                    
+                    # 设置边框
+                    cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                       top=Side(style='thin'), bottom=Side(style='thin'))
+                    
+                    # 特殊格式化
+                    if field_name == '名称':
+                        cell.font = Font(bold=True)
+                    elif field_name == '是否隐藏' and value == '隐藏':
+                        cell.font = Font(color="FF9900")  # 橙色
+                    elif field_name == '奖励' and '星声*' in str(value):
+                        # 根据星声数量设置不同颜色
+                        if '20' in str(value):
+                            cell.font = Font(color="FF6B35")  # 橙色
+                        elif '10' in str(value):
+                            cell.font = Font(color="4ECDC4")  # 青色
+                        elif '5' in str(value):
+                            cell.font = Font(color="45B7D1")  # 蓝色
+                    elif field_name == '获取状态':
+                        # 根据获取状态设置颜色
+                        if value == '已完成':
+                            cell.font = Font(color="00AA00")  # 绿色
+                            cell.fill = PatternFill(start_color="E8F5E8", end_color="E8F5E8", fill_type="solid")  # 浅绿色背景
+                        elif value == '已占用':
+                            cell.font = Font(color="FF6B35")  # 橙红色
+                            cell.fill = PatternFill(start_color="FFE8E0", end_color="FFE8E0", fill_type="solid")  # 浅橙色背景
+                        elif value == '未完成':
+                            cell.font = Font(color="888888")  # 灰色
+                            cell.fill = PatternFill(start_color="F5F5F5", end_color="F5F5F5", fill_type="solid")  # 浅灰色背景
+                        elif value == '暂不可获取':
+                            cell.font = Font(color="999999")  # 深灰色
+                            cell.fill = PatternFill(start_color="EEEEEE", end_color="EEEEEE", fill_type="solid")  # 深灰色背景
+            
+            # 调整列宽
+            column_widths = {
+                '绝对编号': 12,
+                '版本': 10,
+                '第一分类': 15,
+                '第二分类': 20,
+                '编号': 12,
+                '名称': 25,
+                '描述': 40,
+                '奖励': 15,
+                '是否隐藏': 10,
+                '获取状态': 10,
+                '成就组ID': 15,
+                '互斥成就': 20
+            }
+            
+            for col_idx, field_name in enumerate(column_order, 1):
+                sheet.column_dimensions[get_column_letter(col_idx)].width = column_widths.get(field_name, 15)
+            
+            # 时间信息已经移到顶部第一行，无需在底部重复添加
+            
+            # 添加下拉框和条件格式
+            self.add_excel_validation_and_formatting(sheet, len(merged_data), column_order)
+            
+            # 保存文件
+            workbook.save(file_path)
+            print(f"[SUCCESS] Excel数据已导出到: {file_path}")
+            print(f"[INFO] 包含 {len(merged_data)} 条成就数据")
+            show_notification(self, f"导出成功，共 {len(merged_data)} 条成就数据")
+            
+        except Exception as e:
+            print(f"[ERROR] 导出Excel失败: {str(e)}")
+            raise Exception(f"导出Excel失败: {str(e)}")
+    
+    def get_dynamic_export_filename(self):
+        """生成动态导出文件名"""
+        try:
+            # 获取基础成就数据
+            base_achievements = config.load_base_achievements()
+            
+            # 提取所有版本号并排序
+            versions = set()
+            for achievement in base_achievements:
+                version = achievement.get('版本', '')
+                if version:
+                    versions.add(version)
+            
+            if versions:
+                # 排序版本号
+                sorted_versions = sorted(versions, key=lambda x: float(x))
+                min_version = sorted_versions[0]
+                max_version = sorted_versions[-1]
+                
+                if min_version == max_version:
+                    version_range = f"v{min_version}"
+                else:
+                    version_range = f"v{min_version}-{max_version}"
+            else:
+                version_range = "全版本"
+            
+            # 获取当前用户信息
+            current_user = config.get_current_user()
+            users = config.get_users()
+            user_data = users.get(current_user, {})
+            uid = user_data.get('uid', current_user) if isinstance(user_data, dict) else current_user
+            
+            # 生成文件名
+            filename = f"鸣潮{version_range}全成就数据_uid{uid}.xlsx"
+            return filename
+            
+        except Exception as e:
+            print(f"[ERROR] 生成动态文件名失败: {str(e)}")
+            return "成就数据.xlsx"
+
+    def add_excel_validation_and_formatting(self, sheet, data_rows, column_order):
+        """为Excel添加下拉框和条件格式"""
+        try:
+            from openpyxl.worksheet.datavalidation import DataValidation
+            from openpyxl.utils import get_column_letter
+            
+            # 移除分类配置加载，因为不再需要下拉框
+            
+            # 定义下拉框选项
+            status_options = '已完成,已占用,未完成,暂不可获取'
+            reward_options = '星声*5,星声*10,星声*20'
+            
+            # 为每一列添加下拉框
+            for col_idx, field_name in enumerate(column_order, 1):
+                col_letter = get_column_letter(col_idx)
+                
+                # 获取状态列 - 添加下拉框
+                if field_name == '获取状态':
+                    dv = DataValidation(type="list", formula1=f'"{status_options}"', allow_blank=True)
+                    dv.error = '请从下拉列表中选择有效的状态'
+                    dv.errorTitle = '输入错误'
+                    # 应用到数据区域（从第3行到最后一行）
+                    sheet.add_data_validation(dv)
+                    dv.add(f"{col_letter}3:{col_letter}{data_rows + 2}")
+                
+                # 第一分类和第二分类列 - 移除下拉框，允许自由输入
+            
+            # 移除条件格式功能，因为Excel动态条件格式支持有限
+            
+            # 为奖励列添加下拉框
+            reward_col_idx = column_order.index('奖励') + 1 if '奖励' in column_order else 0
+            if reward_col_idx > 0:
+                reward_col_letter = get_column_letter(reward_col_idx)
+                # 添加下拉框验证
+                dv = DataValidation(type="list", formula1=f'"{reward_options}"', allow_blank=True)
+                dv.error = '请从下拉列表中选择有效的奖励数量'
+                dv.errorTitle = '输入错误'
+                dv.prompt = '请选择奖励数量'
+                dv.promptTitle = '提示'
+                sheet.add_data_validation(dv)
+                dv.add(f"{reward_col_letter}3:{reward_col_letter}{data_rows + 2}")
+            
+            print(f"[INFO] 已添加Excel下拉框 - 数据行数: {data_rows}")
+            print(f"[DEBUG] 奖励列索引: {reward_col_idx}")
+            
+        except Exception as e:
+            print(f"[WARNING] 添加Excel验证和格式时出错: {str(e)}")
+
+    def calculate_statistics(self, data):
+        """计算统计信息，与update_statistics逻辑相同"""
         # 正确统计总计（考虑成就组）
         total_groups = set()
         total_achievements = 0
@@ -681,29 +1215,39 @@ class ManageTab(QWidget):
             group_id = achievement.get('成就组ID')
             if group_id:
                 multi_choice_groups.add(group_id)
-        multi_choice_count = len(multi_choice_groups)
+        multi_choice = len(multi_choice_groups)
         
-        self.total_label.setText(f"📊 总计: {total}")
-        self.completed_label.setText(f"✅ 已完成: {completed}")
-        self.incomplete_label.setText(f"⭕ 未完成: {incomplete}")
-        self.hidden_label.setText(f"🙈 隐藏成就: {hidden}")
-        self.unavailable_label.setText(f"🚫 暂不可获取: {unavailable}")
-        self.multi_choice_label.setText(f"🎯 多选一成就: {multi_choice_count}")
-    
-    def open_settings(self):
-        """打开设置对话框"""
-        from core.settings_dialog import TemplateSettingsDialog
-        dialog = TemplateSettingsDialog(self)
-        dialog.exec()
-    
-    def open_help(self):
-        """打开帮助对话框"""
-        from core.help_dialog import HelpDialog
-        dialog = HelpDialog(self)
-        dialog.exec()
-    
+        return {
+            'total': total,
+            'completed': completed,
+            'incomplete': incomplete,
+            'hidden': hidden,
+            'unavailable': unavailable,
+            'multi_choice': multi_choice
+        }
+
+    # Excel动态下拉框实现复杂，暂时使用静态下拉框，用户需要手动确保分类匹配
+
+    def get_current_time(self):
+        """获取当前时间字符串"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     def import_json(self):
             """导入JSON文件"""
+            # 添加确认对话框
+            from core.custom_message_box import CustomMessageBox
+            reply = CustomMessageBox.question(
+                self, 
+                "确认导入", 
+                "确定要导入JSON文件吗？\n此操作将覆盖当前所有成就数据和用户进度，且不可撤销！\n\n建议先备份当前数据。",
+                ("确定", "取消")
+            )
+            
+            if reply != CustomMessageBox.Yes:
+                print("[INFO] 用户取消了JSON导入操作")
+                return
+            
             file_path, _ = QFileDialog.getOpenFileName(
                 self, "导入JSON文件", "", "JSON Files (*.json)"
             )
@@ -1160,6 +1704,10 @@ class ManageTab(QWidget):
         # 更新按钮样式
         if hasattr(self, 'import_btn'):
             self.import_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'import_excel_btn'):
+            self.import_excel_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'export_excel_btn'):
+            self.export_excel_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_json_btn'):
             self.export_json_btn.setStyleSheet(get_button_style(theme))
         
@@ -1241,27 +1789,34 @@ def show_notification(parent, message):
     else:
         parent = main_window
     
-    # 设置提示位置（右上角）
-    notification.setParent(parent)
+    # 设置提示为独立窗口，避免被父窗口影响
+    notification.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+    notification.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
     notification.adjustSize()
     
-    # 计算右上角位置
-    parent_rect = parent.rect()
+    # 计算右上角位置（使用父窗口的全局坐标）
+    parent_rect = parent.geometry()
     notification_width = 300  # 固定宽度
     notification_height = 60  # 固定高度
     
-    x = parent_rect.width() - notification_width - 20
-    y = 60  # 状态栏下方
+    x = parent_rect.x() + parent_rect.width() - notification_width - 20
+    y = parent_rect.y() + 60  # 状态栏下方
     
     notification.setGeometry(x, y, notification_width, notification_height)
     notification.setWordWrap(True)
     notification.setAlignment(Qt.AlignCenter)
     notification.show()
     
-    # 创建淡出动画
-    fade_timer = QTimer(parent)
+    # 创建淡出动画，保持引用避免被垃圾回收
+    fade_timer = QTimer()
+    fade_timer.setSingleShot(True)
     fade_timer.timeout.connect(lambda: fade_out_notification(notification, parent))
-    fade_timer.start(3000)  # 3秒后开始淡出
+    fade_timer.start(3000)  # 3秒后开始淡out
+    
+    # 存储动画引用
+    if not hasattr(parent, 'active_notification_timers'):
+        parent.active_notification_timers = []
+    parent.active_notification_timers.append(fade_timer)
     
     # 存储引用以避免被垃圾回收
     if not hasattr(parent, 'active_notifications'):
@@ -1272,6 +1827,14 @@ def fade_out_notification(notification, parent):
     """淡出提示"""
     from PySide6.QtCore import QPropertyAnimation, QEasingCurve
     
+    # 检查通知是否还存在
+    try:
+        if notification is None or not notification.isVisible():
+            return
+    except RuntimeError:
+        # 对象已被删除
+        return
+    
     # 创建透明度动画
     fade_animation = QPropertyAnimation(notification, b"windowOpacity")
     fade_animation.setDuration(500)  # 0.5秒淡出
@@ -1280,9 +1843,23 @@ def fade_out_notification(notification, parent):
     fade_animation.setEasingCurve(QEasingCurve.OutQuad)
     
     # 动画完成后删除提示
-    fade_animation.finished.connect(lambda: notification.deleteLater())
+    def cleanup_notification():
+        try:
+            if notification and hasattr(notification, 'close'):
+                notification.close()
+            if notification and hasattr(notification, 'deleteLater'):
+                notification.deleteLater()
+        except RuntimeError:
+            pass  # 对象可能已被删除
+        
+        # 从活动通知列表中移除
+        if hasattr(parent, 'active_notifications') and notification in parent.active_notifications:
+            parent.active_notifications.remove(notification)
+    
+    fade_animation.finished.connect(cleanup_notification)
     fade_animation.start()
     
-    # 从活动通知列表中移除
-    if hasattr(parent, 'active_notifications') and notification in parent.active_notifications:
-        parent.active_notifications.remove(notification)
+    # 存储动画引用
+    if not hasattr(parent, 'active_notification_animations'):
+        parent.active_notification_animations = []
+    parent.active_notification_animations.append(fade_animation)
