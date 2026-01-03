@@ -13,9 +13,14 @@ import sys
 def setup_resources_structure():
     """检查并创建resources文件夹结构"""
     try:
-        # 获取resources目录路径
-        from pathlib import Path
-        resources_dir = Path(__file__).parent / "resources"
+        # 获取resources目录路径 - 兼容打包后的路径
+        import sys
+        if getattr(sys, 'frozen', False):
+            # 打包后的可执行文件
+            resources_dir = Path(sys.executable).parent / "resources"
+        else:
+            # 开发环境
+            resources_dir = Path(__file__).parent / "resources"
         
         # 创建resources目录（如果不存在）
         if not resources_dir.exists():

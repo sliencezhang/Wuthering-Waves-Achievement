@@ -33,11 +33,11 @@ def build():
         "-m", "nuitka",
         "--standalone",                    # 独立模式
         "--onefile",                       # 打包为单文件
-        "--windows-disable-console",       # 禁用控制台窗口(调试时注释)
+        "--windows-disable-console",       # 禁用控制台窗口(调试时启用)
         "--enable-plugin=pyside6",         # 启用 PySide6 插件
         f"--windows-icon-from-ico={icon_file}",  # 设置图标
         "--lto=yes",                       # 启用链接时优化(压缩)
-        "--nofollow-import-to=openpyxl",   # 排除未使用的 openpyxl
+        # "--nofollow-import-to=openpyxl",   # 移除这行，因为我们现在使用了openpyxl
         "--output-dir=dist",               # 输出目录
         f"--output-filename={output_filename}",  # 输出文件名
         "--company-name=Silence",
