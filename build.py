@@ -37,7 +37,6 @@ def build():
         "--enable-plugin=pyside6",         # 启用 PySide6 插件
         f"--windows-icon-from-ico={icon_file}",  # 设置图标
         "--lto=yes",                       # 启用链接时优化(压缩)
-        # "--nofollow-import-to=openpyxl",   # 移除这行，因为我们现在使用了openpyxl
         "--output-dir=dist",               # 输出目录
         f"--output-filename={output_filename}",  # 输出文件名
         "--company-name=Silence",
@@ -68,7 +67,7 @@ def build():
         print("=" * 60)
         print(f"可执行文件位于: {project_root / 'dist'}")
         print("=" * 60)
-        
+
         return result.returncode
         
     except subprocess.CalledProcessError as e:
