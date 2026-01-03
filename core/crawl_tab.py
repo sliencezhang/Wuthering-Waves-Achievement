@@ -692,11 +692,28 @@ class CrawlTab(QWidget):
         
         # 更新配置中的默认输出文件名（包含版本）
         target_version = self.version_input.text().strip()
+        if not target_version and achievements:
+            # 如果输入框没有版本，尝试从数据中获取
+            versions = set()
+            for achievement in achievements:
+                ver = achievement.get('版本', '')
+                if ver:
+                    versions.add(ver)
+            
+            if versions:
+                # 如果有多个版本，显示版本范围
+                if len(versions) == 1:
+                    target_version = list(versions)[0]
+                else:
+                    # 排序版本并获取范围
+                    sorted_versions = sorted(versions, key=lambda x: float(x) if x.replace('.', '').isdigit() else 0)
+                    target_version = f"{sorted_versions[0]}-{sorted_versions[-1]}"
+        
         if target_version:
             from core.config import config
-            config.crawl_settings["default_output_file"] = f"鸣潮成就数据_v{target_version}.json"
+            config.crawl_settings["default_output_file"] = f"鸣潮v{target_version}爬取数据.json"
             config.save_config()
-            print(f"[INFO] 已更新默认输出文件名为: 鸣潮成就数据_v{target_version}.json")
+            print(f"[INFO] 已更新默认输出文件名为: 鸣潮v{target_version}爬取数据.json")
         
         print(f"[SUCCESS] 爬取完成，共 {len(achievements)} 条数据")
         
