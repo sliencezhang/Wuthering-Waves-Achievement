@@ -11,6 +11,10 @@ from bs4 import BeautifulSoup
 import re
 import html
 import os
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from core.config import config
 from core.signal_bus import signal_bus
@@ -570,12 +574,31 @@ class CrawlTab(QWidget):
         self.clear_cache_btn.setMaximumWidth(100)
         control_layout.addWidget(self.clear_cache_btn)
         
+        self.export_template_btn = QPushButton("导出范本")
+        self.export_template_btn.setStyleSheet(get_button_style(config.theme))
+        self.export_template_btn.clicked.connect(self.export_excel_template)
+        self.export_template_btn.setMaximumWidth(100)
+        control_layout.addWidget(self.export_template_btn)
+        
+        self.import_excel_btn = QPushButton("导入Excel")
+        self.import_excel_btn.setStyleSheet(get_button_style(config.theme))
+        self.import_excel_btn.clicked.connect(self.import_excel)
+        self.import_excel_btn.setMaximumWidth(100)
+        control_layout.addWidget(self.import_excel_btn)
+        
         self.export_btn = QPushButton("导出JSON")
         self.export_btn.setStyleSheet(get_button_style(config.theme))
         self.export_btn.clicked.connect(self.export_json)
         self.export_btn.setEnabled(False)
         self.export_btn.setMaximumWidth(100)
         control_layout.addWidget(self.export_btn)
+        
+        self.export_excel_btn = QPushButton("导出Excel")
+        self.export_excel_btn.setStyleSheet(get_button_style(config.theme))
+        self.export_excel_btn.clicked.connect(self.export_excel)
+        self.export_excel_btn.setEnabled(False)
+        self.export_excel_btn.setMaximumWidth(100)
+        control_layout.addWidget(self.export_excel_btn)
         
         control_layout.addStretch()
         layout.addWidget(control_group)
@@ -608,8 +631,14 @@ class CrawlTab(QWidget):
             self.wiki_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'clear_cache_btn'):
             self.clear_cache_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'export_template_btn'):
+            self.export_template_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'import_excel_btn'):
+            self.import_excel_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_btn'):
             self.export_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'export_excel_btn'):
+            self.export_excel_btn.setStyleSheet(get_button_style(theme))
     
     def format_version_input(self):
         """自动格式化版本号输入"""
@@ -656,6 +685,7 @@ class CrawlTab(QWidget):
         self.achievements = achievements
         self.table.load_data(achievements)
         self.export_btn.setEnabled(True)
+        self.export_excel_btn.setEnabled(True)
         self.crawl_btn.setEnabled(True)
         
         self.show_notification(f"爬取完成，共获取 {len(achievements)} 条成就数据")
@@ -1085,6 +1115,290 @@ class CrawlTab(QWidget):
     
     
     
+    def export_excel_template(self):
+        """导出Excel范本"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出Excel范本", "成就数据导入范本.xlsx", "Excel Files (*.xlsx)"
+        )
+        
+        if file_path:
+            try:
+                self.create_excel_template(file_path)
+            except Exception as e:
+                print(f"[ERROR] 导出范本失败: {str(e)}")
+                self.show_notification(f"导出范本失败: {str(e)}")
+    
+    def create_excel_template(self, file_path):
+        """创建Excel范本文件"""
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+            
+            # 创建工作簿
+            workbook = openpyxl.Workbook()
+            sheet = workbook.active
+            sheet.title = "成就数据导入范本"
+            
+            # 定义列信息
+            columns_info = [
+                {'name': '名称', 'required': '是', 'description': '成就名称，必须列。系统只自动去除"「隐藏成就」"标志，其他隐藏字眼需手动清理', 'example': '「隐藏成就」我们相信漂泊者'},
+                {'name': '描述', 'required': '否', 'description': '成就描述，非必须列', 'example': '重建拉海洛的全部路网'},
+                {'name': '版本', 'required': '是', 'description': '版本号，必须列，整数自动补.0', 'example': '3 或 3.0'},
+                {'name': '奖励', 'required': '是', 'description': '奖励内容，必须列，纯数字自动加"星声*"', 'example': '10 或 星声*10'},
+                {'name': '是否隐藏', 'required': '否', 'description': '是否隐藏，非必须列，建议手动填写', 'example': '隐藏 或 留空'},
+                {'name': '第一分类', 'required': '否', 'description': '第一分类，非必须列，不提供则根据第二分类自动获取', 'example': '索拉漫行'},
+                {'name': '第二分类', 'required': '是', 'description': '第二分类，必须列', 'example': '索拉的大地·拉海洛'}
+            ]
+            
+            # 设置表头
+            headers = ['列名', '是否必须', '说明', '示例数据']
+            for col, header in enumerate(headers, 1):
+                cell = sheet.cell(row=1, column=col, value=header)
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+            
+            # 填充列说明信息
+            for row, col_info in enumerate(columns_info, 2):
+                # 列名
+                cell = sheet.cell(row=row, column=1, value=col_info['name'])
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+                
+                # 是否必须
+                cell = sheet.cell(row=row, column=2, value=col_info['required'])
+                cell.font = Font(bold=True, color="FF0000" if col_info['required'] == '是' else "000000")
+                cell.alignment = Alignment(horizontal="center")
+                cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+                
+                # 说明
+                cell = sheet.cell(row=row, column=3, value=col_info['description'])
+                cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+                
+                # 示例数据
+                cell = sheet.cell(row=row, column=4, value=col_info['example'])
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+            
+            # 调整列宽
+            sheet.column_dimensions[get_column_letter(1)].width = 15  # 列名
+            sheet.column_dimensions[get_column_letter(2)].width = 10  # 是否必须
+            sheet.column_dimensions[get_column_letter(3)].width = 50  # 说明
+            sheet.column_dimensions[get_column_letter(4)].width = 25  # 示例数据
+            
+            # 添加数据示例区域标题（考虑新增的分隔线和提示）
+            example_title_row = len(columns_info) + 5
+            title_cell = sheet.cell(row=example_title_row, column=1, value="📋 数据示例区域（导入时删除当前行及以上所有内容行，只使用此区域数据）：")
+            title_cell.font = Font(bold=True, size=12, color="FF0000")
+            title_cell.fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+            
+            # 合并标题单元格
+            sheet.merge_cells(start_row=example_title_row, start_column=1, 
+                            end_row=example_title_row, end_column=7)
+            
+            # 添加示例数据表头
+            example_headers_row = example_title_row + 1
+            example_headers = ['名称', '描述', '版本', '奖励', '是否隐藏', '第一分类', '第二分类']
+            for col, header in enumerate(example_headers, 1):
+                cell = sheet.cell(row=example_headers_row, column=col, value=header)
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                   top=Side(style='thin'), bottom=Side(style='thin'))
+            
+            # 添加示例数据行
+            example_data = [
+                ['我们相信漂泊者', '重建拉海洛的全部路网。', '3', '10', '', '索拉漫行', '索拉的大地·拉海洛'],
+                ['请勿剐蹭', '在拉海洛路网上与车辆发生碰撞。', '3', '5', '隐藏', '索拉漫行', '索拉的大地·拉海洛'],
+                ['心无妄虑', '完成「全息战略·同步」的「无妄者I」。', '3.0', '星声*5', '', '铿锵刃鸣', '来自深塔·二']
+            ]
+            
+            for row_idx, row_data in enumerate(example_data, example_headers_row + 1):
+                for col_idx, value in enumerate(row_data, 1):
+                    cell = sheet.cell(row=row_idx, column=col_idx, value=value)
+                    # 为示例数据区域添加浅绿色背景，使其更醒目
+                    cell.fill = PatternFill(start_color="F0FFF0", end_color="F0FFF0", fill_type="solid")
+                    cell.border = Border(left=Side(style='thin'), right=Side(style='thin'), 
+                                       top=Side(style='thin'), bottom=Side(style='thin'))
+                    if col_idx == 1:  # 名称列加粗
+                        cell.font = Font(bold=True)
+            
+            # 调整示例数据区域列宽
+            for col in range(1, 8):
+                sheet.column_dimensions[get_column_letter(col)].width = 20
+            
+            
+            
+            # 保存文件
+            workbook.save(file_path)
+            print(f"[SUCCESS] Excel范本已导出到: {file_path}")
+            self.show_notification("范本导出成功")
+            
+        except Exception as e:
+            print(f"[ERROR] 创建Excel范本失败: {str(e)}")
+            raise Exception(f"创建Excel范本失败: {str(e)}")
+
+    def import_excel(self):
+        """导入Excel文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "导入Excel文件", "", "Excel Files (*.xlsx *.xls)"
+        )
+        
+        if file_path:
+            try:
+                self.import_from_excel(file_path)
+            except Exception as e:
+                print(f"[ERROR] 导入失败: {str(e)}")
+                self.show_notification(f"导入失败: {str(e)}")
+    
+    def import_from_excel(self, excel_path):
+        """从Excel文件导入数据并进行清洗"""
+        try:
+            import openpyxl
+            
+            # 读取Excel文件
+            print(f"[INFO] 正在读取Excel文件: {excel_path}")
+            workbook = openpyxl.load_workbook(excel_path)
+            sheet = workbook.active
+            
+            # 获取表头
+            headers = []
+            for cell in sheet[1]:
+                headers.append(cell.value)
+            
+            # 检查必要的列
+            required_columns = ['名称', '第二分类']
+            missing_columns = [col for col in required_columns if col not in headers]
+            if missing_columns:
+                raise Exception(f"缺少必要的列: {', '.join(missing_columns)}")
+            
+            # 创建列名到索引的映射
+            col_index = {header: idx for idx, header in enumerate(headers)}
+            
+            # 数据清洗和转换
+            print(f"[INFO] 开始数据清洗...")
+            cleaned_achievements = []
+            
+            # 加载分类配置
+            category_config = config.load_category_config()
+            first_categories = category_config.get("first_categories", {})
+            second_categories = category_config.get("second_categories", {})
+            
+            # 创建第二分类到第一分类的映射
+            first_category_map = {}
+            for first_cat, second_cats in second_categories.items():
+                for second_cat in second_cats:
+                    first_category_map[second_cat] = first_cat
+            
+            # 从第二行开始读取数据
+            for row_idx, row in enumerate(sheet.iter_rows(min_row=2), start=2):
+                if not any(cell.value for cell in row):
+                    continue  # 跳过空行
+                
+                achievement = {}
+                
+                # 1. 名称列：去除「隐藏成就」
+                name_value = row[col_index['名称']].value
+                name = str(name_value).strip() if name_value else ''
+                if '「隐藏成就」' in name:
+                    name = name.replace('「隐藏成就」', '').strip()
+                achievement['名称'] = name
+                
+                # 2. 描述列
+                desc_value = row[col_index['描述']].value if '描述' in col_index else ''
+                description = str(desc_value).strip() if desc_value else ''
+                if description:
+                    # 使用正则表达式判断文本最后一位是否为字符
+                    import re
+                    # 正则匹配：以字符（中文、英文、数字）结尾
+                    if re.search(r'[\w\u4e00-\u9fff]$', description):
+                        description += '。'
+                achievement['描述'] = description
+                
+                # 3. 版本列：智能处理小数
+                version_value = row[col_index['版本']].value if '版本' in col_index else ''
+                version = str(version_value).strip() if version_value else ''
+                if version:
+                    # 检查是否已经包含小数点
+                    if '.' in version:
+                        # 已经有小数点，保持原样
+                        pass
+                    else:
+                        # 没有小数点，补充.0
+                        version = f"{version}.0"
+                achievement['版本'] = version
+                
+                # 4. 奖励列：纯数字拼接"星声*"
+                reward_value = row[col_index['奖励']].value if '奖励' in col_index else ''
+                reward = str(reward_value).strip() if reward_value else ''
+                if reward.isdigit():
+                    reward = f"星声*{reward}"
+                achievement['奖励'] = reward
+                
+                # 5. 是否隐藏列：简化判断，只判断是否包含"隐藏"
+                if '是否隐藏' in col_index:
+                    hidden_value = row[col_index['是否隐藏']].value
+                    is_hidden = str(hidden_value).strip() if hidden_value else ''
+                    achievement['是否隐藏'] = '隐藏' if '隐藏' in is_hidden else ''
+                else:
+                    # 根据名称判断
+                    achievement['是否隐藏'] = '隐藏' if '隐藏' in name else ''
+                
+                # 6. 第二分类列：必须有
+                second_category_value = row[col_index['第二分类']].value
+                second_category = str(second_category_value).strip() if second_category_value else ''
+                if not second_category:
+                    raise Exception(f"第{row_idx}行：第二分类不能为空")
+                achievement['第二分类'] = second_category
+                
+                # 7. 第一分类列：如果没有提供，根据第二分类获取
+                if '第一分类' in col_index:
+                    first_category_value = row[col_index['第一分类']].value
+                    first_category = str(first_category_value).strip() if first_category_value else ''
+                    if first_category:
+                        achievement['第一分类'] = first_category
+                    else:
+                        # 根据第二分类映射获取第一分类
+                        first_category = first_category_map.get(second_category, '')
+                        if not first_category:
+                            raise Exception(f"第{row_idx}行：无法根据第二分类'{second_category}'找到对应的第一分类")
+                        achievement['第一分类'] = first_category
+                else:
+                    # 根据第二分类映射获取第一分类
+                    first_category = first_category_map.get(second_category, '')
+                    if not first_category:
+                        raise Exception(f"第{row_idx}行：无法根据第二分类'{second_category}'找到对应的第一分类")
+                    achievement['第一分类'] = first_category
+                
+                cleaned_achievements.append(achievement)
+            
+            workbook.close()
+            
+            # 更新数据
+            self.achievements = cleaned_achievements
+            self.table.load_data(cleaned_achievements)
+            self.export_btn.setEnabled(True)
+            self.export_excel_btn.setEnabled(True)
+            self.merge_btn.setEnabled(True)
+            
+            print(f"[SUCCESS] 导入完成，共 {len(cleaned_achievements)} 条成就数据")
+            self.show_notification(f"导入成功，共 {len(cleaned_achievements)} 条成就数据")
+            
+        except Exception as e:
+            print(f"[ERROR] 导入Excel失败: {str(e)}")
+            raise Exception(f"导入Excel失败: {str(e)}")
+
     def export_json(self):
         """导出数据"""
         if not self.achievements:
@@ -1130,6 +1444,113 @@ class CrawlTab(QWidget):
             print(f"[INFO] 包含 {len(export_data)} 条成就数据")
         except Exception as e:
             print(f"[ERROR] 导出 JSON 失败: {str(e)}")
+    
+    def export_excel(self):
+        """导出Excel文件"""
+        if not self.achievements:
+            print("[WARNING] 没有数据可导出")
+            show_notification(self, "没有数据可导出")
+            return
+        
+        # 动态获取版本信息用于文件名
+        version = self.version_input.text().strip()
+        if not version and self.achievements:
+            # 如果输入框没有版本，尝试从数据中获取
+            versions = set()
+            for achievement in self.achievements:
+                ver = achievement.get('版本', '')
+                if ver:
+                    versions.add(ver)
+            
+            if versions:
+                # 如果有多个版本，显示版本范围
+                if len(versions) == 1:
+                    version = list(versions)[0]
+                else:
+                    # 排序版本并获取范围
+                    sorted_versions = sorted(versions, key=lambda x: float(x) if x.replace('.', '').isdigit() else 0)
+                    version = f"{sorted_versions[0]}-{sorted_versions[-1]}"
+        
+        if version:
+            default_filename = f"鸣潮v{version}爬取数据.xlsx"
+        else:
+            default_filename = "鸣潮爬取数据.xlsx"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出Excel文件", default_filename, "Excel Files (*.xlsx)"
+        )
+        
+        if file_path:
+            try:
+                self.export_to_excel(file_path)
+            except Exception as e:
+                print(f"[ERROR] 导出Excel失败: {str(e)}")
+                self.show_notification(f"导出Excel失败: {str(e)}")
+    
+    def export_to_excel(self, excel_path):
+        """导出为Excel格式"""
+        try:
+            wb = Workbook()
+            sheet = wb.active
+            sheet.title = "成就数据"
+            
+            # 定义列顺序（与范本保持一致）
+            column_order = [
+                '名称', '描述', '版本', '奖励', '是否隐藏', '第一分类', '第二分类'
+            ]
+            
+            # 写入表头
+            for col_idx, field_name in enumerate(column_order, 1):
+                cell = sheet.cell(row=1, column=col_idx, value=field_name)
+                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                cell.font = Font(color="FFFFFF", bold=True)
+                cell.alignment = Alignment(horizontal="center")
+            
+            # 写入数据
+            for row_idx, achievement in enumerate(self.achievements, start=2):
+                for col_idx, field_name in enumerate(column_order, 1):
+                    value = achievement.get(field_name, '')
+                    
+                    # 特殊处理名称列
+                    if field_name == '名称' and value:
+                        cell = sheet.cell(row=row_idx, column=col_idx, value=value)
+                        cell.font = Font(bold=True)
+                        
+                        # 隐藏成就用橙色
+                        if achievement.get('是否隐藏') == '隐藏':
+                            cell.font = Font(bold=True, color="FFA500")
+                    else:
+                        cell = sheet.cell(row=row_idx, column=col_idx, value=str(value))
+                    
+                    # 设置边框
+                    thin_border = Border(
+                        left=Side(style='thin'),
+                        right=Side(style='thin'),
+                        top=Side(style='thin'),
+                        bottom=Side(style='thin')
+                    )
+                    cell.border = thin_border
+            
+            # 调整列宽
+            column_widths = {
+                '名称': 25, '描述': 40, '版本': 10, '奖励': 15, '是否隐藏': 10, 
+                '第一分类': 15, '第二分类': 20
+            }
+            
+            for col_idx, field_name in enumerate(column_order, 1):
+                col_letter = get_column_letter(col_idx)
+                sheet.column_dimensions[col_letter].width = column_widths.get(field_name, 15)
+            
+            # 保存文件
+            wb.save(excel_path)
+            
+            print(f"[SUCCESS] Excel数据已导出到: {excel_path}")
+            print(f"[INFO] 包含 {len(self.achievements)} 条成就数据")
+            show_notification(self, f"成功导出 {len(self.achievements)} 条成就数据到Excel")
+            
+        except Exception as e:
+            print(f"[ERROR] 导出Excel失败: {str(e)}")
+            raise Exception(f"导出Excel失败: {str(e)}")
     
     def load_local_data(self):
         """加载本地保存的数据"""
@@ -1268,8 +1689,14 @@ class CrawlTab(QWidget):
             self.crawl_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'merge_btn'):
             self.merge_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'export_template_btn'):
+            self.export_template_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'import_excel_btn'):
+            self.import_excel_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_btn'):
             self.export_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'export_excel_btn'):
+            self.export_excel_btn.setStyleSheet(get_button_style(theme))
         
         # 更新输入框样式
         if hasattr(self, 'search_input'):
