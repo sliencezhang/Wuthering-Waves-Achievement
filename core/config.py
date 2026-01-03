@@ -4,18 +4,49 @@ import os
 from pathlib import Path
 
 
+def setup_resources_structure():
+    """检查并创建resources文件夹结构"""
+    # # 创建resources目录（如果不存在）
+    resources_dir = get_resource_path("resources")
+    if not resources_dir.exists():
+        print(f"[INFO] 创建resources目录: {resources_dir}")
+        resources_dir.mkdir(exist_ok=True)
+
+    # 定义子文件夹和对应的说明内容
+    subdirs = {
+        "characters": "角色肖像图文件夹\n\n此文件夹用于存放游戏角色的全身肖像图文件。\n\n获取方式：\n1. 访问库街区Wiki-角色列表页面\n   链接：https://wiki.kurobbs.com/mc/catalogue/list?fid=1099&sid=1105\n2. 点击每个角色进入详情页\n3. 拖动角色的全身肖像图到此文件夹\n4. 将图片重命名为角色名(如：今汐.webp)\n\n支持的格式：.webp\n\n重要提示：\n• 肖像图文件名必须与profile文件夹中的头像文件名完全一致\n• 这样切换头像时才能自动联动显示对应的肖像图\n\n请勿删除此文件夹。",
+        "img": "界面背景图片文件夹\n\n此文件夹用于存放应用程序的背景图片文件。\n\n默认背景图片：\n• background-light.png - 浅色主题背景\n• background-dark.png - 深色主题背景\n\n支持的格式：.png, .jpg\n\n使用说明：\n• 替换这些文件可以自定义应用背景\n• 文件名必须保持一致才能被正确识别\n\n请勿删除此文件夹。",
+        "profile": "用户头像文件夹\n\n此文件夹用于存放用户选择的头像图片文件。\n\n获取方式：\n1. 访问库街区Wiki-角色头像页面\n   链接：https://wiki.kurobbs.com/mc/catalogue/list?fid=1099&sid=1363\n2. 直接拖动每个角色的头像图片到此文件夹\n3. 将图片重命名为角色名(如：今汐.png)\n\n支持的格式：.png\n\n重要提示：\n• 头像文件名必须与characters文件夹中的肖像图文件名完全一致\n• 在主窗口点击头像切换头像，会自动更新同角色肖像图\n\n请勿删除此文件夹。"
+    }
+
+    # 检查并创建子文件夹和说明文件
+    for subdir_name, description in subdirs.items():
+        subdir_path = resources_dir / subdir_name
+
+        # 创建子文件夹（如果不存在）
+        if not subdir_path.exists():
+            print(f"[INFO] 创建子目录: {subdir_path}")
+            subdir_path.mkdir(exist_ok=True)
+
+        # 创建说明文件（如果不存在）
+        readme_file = subdir_path / "文件夹说明.txt"
+        if not readme_file.exists():
+            print(f"[INFO] 创建说明文件: {readme_file}")
+            with open(readme_file, 'w', encoding='utf-8') as f:
+                f.write(description)
+
+    print("[SUCCESS] Resources文件夹结构检查完成")
+
+
+
+
 def get_resource_path(relative_path):
     """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
-    # Nuitka 打包后 sys.executable 指向临时目录的 python.exe
-    # 判断是否打包：检查 __file__ 是否存在（打包后不存在）或 sys.argv[0] 是否为 .exe
-    if getattr(sys, 'frozen', False) or not hasattr(sys.modules[__name__], '__file__') or sys.argv[0].endswith('.exe'):
-        # 打包后：使用 argv[0] 的绝对路径获取 exe 实际位置
-        base_path = Path(os.path.abspath(sys.argv[0])).parent
-    else:
-        # 开发环境：当前文件的父目录的父目录
-        base_path = Path(__file__).parent.parent
+    base_path = Path(sys.argv[0]).parent
     
     return base_path / relative_path
+
+setup_resources_structure()
 
 
 class Config:
@@ -235,7 +266,12 @@ class Config:
                 with open(base_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             else:
-                print("[WARNING] 基础成就数据文件不存在")
+                print("[INFO] 基础成就数据文件不存在，创建空文件")
+                # 确保目录存在
+                base_file.parent.mkdir(parents=True, exist_ok=True)
+                # 创建空文件
+                with open(base_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f, ensure_ascii=False, indent=2)
                 return []
         except Exception as e:
             print(f"[ERROR] 加载基础成就数据失败: {str(e)}")
