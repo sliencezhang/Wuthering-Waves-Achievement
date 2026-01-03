@@ -69,7 +69,8 @@ class TemplateSettingsDialog(QDialog):
             ("👤 用户管理", self._create_user_tab),
             ("🎨 外观设置", self._create_appearance_tab),
             ("📂 分类管理", self._create_category_tab),
-            ("🎯 多选一管理", self._create_achievement_group_tab)
+            ("🎯 多选一管理", self._create_achievement_group_tab),
+            ("🗂️ 版本管理", self._create_version_tab)
         ]
 
         for name, creator in tabs:
@@ -177,6 +178,60 @@ class TemplateSettingsDialog(QDialog):
 
         layout.addWidget(bg_group)
         layout.addStretch()
+
+        return widget
+
+    def _create_version_tab(self) -> QWidget:
+        """创建版本管理标签页"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # 添加说明文字
+        desc_label = QLabel(
+            "📖 <b>版本数据管理：</b><br>"
+            "选择要删除的版本号，系统会在删除前自动导出当前所有成就数据作为备份。<br>"
+            "<span style='color: #e74c3c;'><b>⚠️ 警告：</b></span>删除操作不可恢复，请谨慎操作！"
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet(get_settings_desc_style(config.theme))
+        layout.addWidget(desc_label)
+
+        # 版本选择组
+        version_group = QGroupBox("版本删除")
+        version_layout = QVBoxLayout(version_group)
+
+        # 版本选择下拉框
+        version_select_layout = QHBoxLayout()
+        version_select_layout.addWidget(QLabel("选择版本:"))
+        self.version_combo = QComboBox()
+        self.version_combo.setMinimumWidth(200)
+        version_select_layout.addWidget(self.version_combo)
+        version_select_layout.addStretch()
+        version_layout.addLayout(version_select_layout)
+
+        # 删除按钮
+        delete_layout = QHBoxLayout()
+        self.delete_version_btn = QPushButton("删除选定版本")
+        self.delete_version_btn.setStyleSheet(get_button_style(config.theme))
+        self.delete_version_btn.clicked.connect(self.delete_version_data)
+        delete_layout.addWidget(self.delete_version_btn)
+        delete_layout.addStretch()
+        version_layout.addLayout(delete_layout)
+
+        # 刷新版本列表按钮
+        refresh_layout = QHBoxLayout()
+        self.refresh_versions_btn = QPushButton("刷新版本列表")
+        self.refresh_versions_btn.setStyleSheet(get_button_style(config.theme))
+        self.refresh_versions_btn.clicked.connect(self.refresh_version_list)
+        refresh_layout.addWidget(self.refresh_versions_btn)
+        refresh_layout.addStretch()
+        version_layout.addLayout(refresh_layout)
+
+        layout.addWidget(version_group)
+        layout.addStretch()
+
+        # 初始化版本列表
+        self.refresh_version_list()
 
         return widget
 
@@ -1722,6 +1777,181 @@ class TemplateSettingsDialog(QDialog):
             import traceback
             traceback.print_exc()
 
+    def refresh_version_list(self):
+        """刷新版本列表"""
+        # 获取当前成就数据
+        from core.main_window import TemplateMainWindow
+        from PySide6.QtWidgets import QApplication
+        main_window = None
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, TemplateMainWindow):
+                main_window = widget
+                break
+        
+        if not main_window or not hasattr(main_window, 'manage_tab'):
+            return
+        
+        achievements = main_window.manage_tab.manager.achievements
+        
+        # 收集所有版本
+        versions = set()
+        for achievement in achievements:
+            version = achievement.get('版本', '')
+            if version:
+                versions.add(version)
+        
+        # 清空并重新填充下拉框
+        self.version_combo.clear()
+        if versions:
+            sorted_versions = sorted(versions, key=lambda x: float(x) if x.replace('.', '').isdigit() else 0)
+            self.version_combo.addItems(sorted_versions)
+        
+        # 如果有版本，启用删除按钮
+        self.delete_version_btn.setEnabled(bool(versions))
+
+    def delete_version_data(self):
+        """删除指定版本的成就数据"""
+        selected_version = self.version_combo.currentText()
+        if not selected_version:
+            CustomMessageBox.warning(self, "警告", "请先选择要删除的版本！")
+            return
+        
+        # 确认删除
+        reply = CustomMessageBox.question(
+            self, 
+            "确认删除", 
+            f"确定要删除版本 {selected_version} 的所有成就数据吗？\n\n"
+            f"删除前会自动导出当前所有成就数据作为备份。\n"
+            f"此操作不可恢复！",
+            ("确定", "取消")
+        )
+        
+        if reply != CustomMessageBox.Yes:
+            return
+        
+        try:
+            # 获取主窗口和管理标签页
+            from core.main_window import TemplateMainWindow
+            from PySide6.QtWidgets import QApplication
+            main_window = None
+            for widget in QApplication.topLevelWidgets():
+                if isinstance(widget, TemplateMainWindow):
+                    main_window = widget
+                    break
+            
+            if not main_window or not hasattr(main_window, 'manage_tab'):
+                raise Exception("无法访问成就管理数据")
+            
+            manage_tab = main_window.manage_tab
+            all_achievements = manage_tab.manager.achievements
+            
+            # 1. 找出要删除的版本数据
+            to_delete_achievements = [ach for ach in all_achievements if ach.get('版本', '') == selected_version]
+            
+            if not to_delete_achievements:
+                CustomMessageBox.information(self, "提示", f"没有找到版本 {selected_version} 的成就数据")
+                return
+            
+            # 2. 导出要删除的版本数据
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"版本{selected_version}_成就数据_{timestamp}.xlsx"
+            
+            # 获取exe同目录路径
+            from core.config import get_resource_path
+            backup_path = get_resource_path("") / backup_filename
+            
+            # 调用导出Excel功能（只导出要删除的版本数据）
+            self._export_achievements_to_excel(to_delete_achievements, str(backup_path))
+            
+            # 3. 删除指定版本的成就
+            filtered_achievements = [ach for ach in all_achievements if ach.get('版本', '') != selected_version]
+            deleted_count = len(to_delete_achievements)
+            
+            # 4. 更新数据（不需要重新编码）
+            manage_tab.manager.achievements = filtered_achievements
+            manage_tab.manager.filtered_achievements = filtered_achievements.copy()
+            
+            # 5. 更新界面
+            manage_tab.manager_table.load_data(filtered_achievements)
+            manage_tab.update_filters()
+            manage_tab.update_statistics()
+            manage_tab.save_to_json()
+            
+            # 6. 刷新版本列表
+            self.refresh_version_list()
+            
+            # 7. 显示成功消息
+            success_msg = f"成功删除版本 {selected_version} 的 {deleted_count} 条成就数据！\n"
+            success_msg += f"该版本数据已导出至：{backup_path}"
+            CustomMessageBox.information(self, "删除成功", success_msg)
+            
+        except Exception as e:
+            error_msg = f"删除版本数据失败：{str(e)}"
+            CustomMessageBox.critical(self, "错误", error_msg)
+            print(f"[ERROR] {error_msg}")
+
+    def _export_achievements_to_excel(self, achievements, file_path):
+        """导出成就数据到Excel文件"""
+        import openpyxl
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from openpyxl.utils import get_column_letter
+        
+        wb = openpyxl.Workbook()
+        sheet = wb.active
+        sheet.title = "成就数据"
+        
+        # 定义列顺序（与数据爬取导出保持一致）
+        column_order = [
+            '名称', '描述', '奖励', '版本', '是否隐藏', '第一分类', '第二分类', '获取状态'
+        ]
+        
+        # 写入表头
+        for col_idx, field_name in enumerate(column_order, 1):
+            cell = sheet.cell(row=1, column=col_idx, value=field_name)
+            cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            cell.font = Font(color="FFFFFF", bold=True)
+            cell.alignment = Alignment(horizontal="center")
+        
+        # 写入数据
+        for row_idx, achievement in enumerate(achievements, start=2):
+            for col_idx, field_name in enumerate(column_order, 1):
+                value = achievement.get(field_name, '')
+                
+                # 特殊处理名称列
+                if field_name == '名称' and value:
+                    cell = sheet.cell(row=row_idx, column=col_idx, value=value)
+                    cell.font = Font(bold=True)
+                    
+                    # 隐藏成就用橙色
+                    if achievement.get('是否隐藏') == '隐藏':
+                        cell.font = Font(bold=True, color="FFA500")
+                else:
+                    cell = sheet.cell(row=row_idx, column=col_idx, value=str(value))
+                
+                # 设置边框
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+                cell.border = thin_border
+        
+        # 调整列宽
+        column_widths = {
+            '名称': 25, '描述': 40, '奖励': 15, '版本': 10, '是否隐藏': 10, 
+            '第一分类': 15, '第二分类': 20, '获取状态': 10
+        }
+        
+        for col_idx, field_name in enumerate(column_order, 1):
+            col_letter = get_column_letter(col_idx)
+            sheet.column_dimensions[col_letter].width = column_widths.get(field_name, 15)
+        
+        # 保存文件
+        wb.save(file_path)
+        print(f"[INFO] 版本数据已导出到: {file_path}")
+
 
 class AchievementSelectionDialog(QDialog):
     """成就选择对话框"""
@@ -1967,6 +2197,8 @@ class AchievementSelectionDialog(QDialog):
     def get_selected_achievements(self):
         """获取选中的成就"""
         return self.selected_achievements
+    
+    
         
     
     
