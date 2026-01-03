@@ -499,6 +499,9 @@ class AchievementTable(QTableWidget):
                         parent.save_local_data()
                     elif hasattr(parent, 'save_to_json'):
                         parent.save_to_json()
+                    
+                    # 即时刷新统计信息
+                    self._refresh_statistics()
                 
                 self.pressed_row = row
                 # 启动长按定时器（1秒）
@@ -591,6 +594,24 @@ class AchievementTable(QTableWidget):
             # 立即更新表格显示
             should_clear_second = (col == 6 and old_value != new_value and old_value != '')
             self._updateTableDisplay(row, col, new_value, should_clear_second)
+            
+            # 即时刷新统计信息
+            self._refresh_statistics()
+    
+    def _refresh_statistics(self):
+        """即时刷新统计信息"""
+        try:
+            # 获取父级ManageTab对象
+            parent = self.parent()
+            while parent and not hasattr(parent, 'update_statistics'):
+                parent = parent.parent()
+            
+            if parent and hasattr(parent, 'update_statistics'):
+                # 调用父级的update_statistics方法
+                parent.update_statistics()
+                print("[INFO] 统计信息已即时刷新")
+        except Exception as e:
+            print(f"[ERROR] 刷新统计信息失败: {str(e)}")
     
     def _updateTableDisplay(self, row, col, new_value, should_clear_second=False):
         """更新表格显示"""
@@ -705,10 +726,12 @@ class AchievementTable(QTableWidget):
                 
                 print(f"[INFO] 成就组 {group_id}：已占用成就 {achievement.get('名称', '')}")
         
-        # 强制重绘
-        self.viewport().update()
-        self.update()
-    
+                # 强制重绘
+                self.viewport().update()
+                self.update()
+                # 即时刷新统计信息
+                self._refresh_statistics()
+        
     def _unlock_group_achievements(self, unlocked_achievement):
         """解锁同组其他成就 - 将同组所有成就都设为未完成"""
         group_id = unlocked_achievement.get('成就组ID')
@@ -737,6 +760,9 @@ class AchievementTable(QTableWidget):
         # 强制重绘
         self.viewport().update()
         self.update()
+        
+        # 即时刷新统计信息
+        self._refresh_statistics()
     
     def apply_theme(self, theme):
         """应用主题"""
