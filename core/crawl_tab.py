@@ -784,18 +784,25 @@ class CrawlTab(QWidget):
             return
         
         current_achievements = manage_tab.manager.achievements
-        current_names = {a.get('名称', '') for a in current_achievements}
         
-        # 创建名称到成就的映射，用于快速查找
-        current_name_map = {a.get('名称', ''): a for a in current_achievements}
+        # 创建名称+描述的组合键，用于精确判断重复
+        current_achievements_keys = set()
+        for a in current_achievements:
+            name = a.get('名称', '')
+            desc = a.get('描述', '')
+            key = (name, desc)  # 使用元组作为组合键
+            current_achievements_keys.add(key)
         
         # 仅筛选出不存在的成就进行添加
         to_add = []     # 需要新增的成就
         
         for achievement in self.achievements:
             name = achievement.get('名称', '')
-            if name not in current_names:
-                # 新成就
+            desc = achievement.get('描述', '')
+            key = (name, desc)
+            
+            if key not in current_achievements_keys:
+                # 新成就（名称+描述组合不存在）
                 to_add.append(achievement)
         
         if not to_add:
