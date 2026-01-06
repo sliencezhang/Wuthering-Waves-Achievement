@@ -654,11 +654,11 @@ class ManageTab(QWidget):
     def import_from_excel(self, excel_path):
         """从Excel文件导入数据并转换为base_achievements和user_progress"""
         try:
-            import openpyxl
+            from openpyxl import load_workbook
             
             # 读取Excel文件
             print(f"[INFO] 正在读取Excel文件: {excel_path}")
-            workbook = openpyxl.load_workbook(excel_path)
+            workbook = load_workbook(excel_path)
             sheet = workbook.active
             
             # 检查第一行是否为时间信息行
@@ -1037,12 +1037,12 @@ class ManageTab(QWidget):
     def export_to_excel(self, file_path):
         """将基础成就和用户进度合并导出为Excel"""
         try:
-            import openpyxl
+            from openpyxl import Workbook
             from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
             from openpyxl.utils import get_column_letter
             
             # 创建工作簿
-            workbook = openpyxl.Workbook()
+            workbook = Workbook()
             sheet = workbook.active
             sheet.title = "成就数据"
             

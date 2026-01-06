@@ -11,9 +11,6 @@ from bs4 import BeautifulSoup
 import re
 import html
 import os
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from core.config import config
 from core.manage_tab import show_notification
@@ -1176,12 +1173,12 @@ class CrawlTab(QWidget):
     def create_excel_template(self, file_path):
         """创建Excel范本文件"""
         try:
-            import openpyxl
+            from openpyxl import Workbook
             from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
             from openpyxl.utils import get_column_letter
             
             # 创建工作簿
-            workbook = openpyxl.Workbook()
+            workbook = Workbook()
             sheet = workbook.active
             sheet.title = "成就数据导入范本"
             
@@ -1310,11 +1307,11 @@ class CrawlTab(QWidget):
     def import_from_excel(self, excel_path):
         """从Excel文件导入数据并进行清洗"""
         try:
-            import openpyxl
+            from openpyxl import load_workbook
             
             # 读取Excel文件
             print(f"[INFO] 正在读取Excel文件: {excel_path}")
-            workbook = openpyxl.load_workbook(excel_path)
+            workbook = load_workbook(excel_path)
             sheet = workbook.active
             
             # 获取表头
@@ -1592,6 +1589,9 @@ class CrawlTab(QWidget):
     def export_to_excel(self, excel_path):
         """导出为Excel格式"""
         try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
             wb = Workbook()
             sheet = wb.active
             sheet.title = "成就数据"

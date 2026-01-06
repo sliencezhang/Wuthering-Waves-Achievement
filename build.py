@@ -47,6 +47,13 @@ def build():
         "--assume-yes-for-downloads",      # 自动确认下载
         "--show-progress",                 # 显示进度
         "--show-memory",                   # 显示内存使用
+        # 排除不必要的模块以减少打包体积
+        "--nofollow-import-to=numpy",
+        "--nofollow-import-to=matplotlib",
+        "--nofollow-import-to=PIL",
+        "--nofollow-import-to=pillow",
+        "--nofollow-import-to=scipy",
+        "--nofollow-import-to=pandas",
         str(main_file)
     ]
     

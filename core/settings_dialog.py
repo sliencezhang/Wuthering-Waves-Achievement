@@ -1893,11 +1893,11 @@ class TemplateSettingsDialog(QDialog):
 
     def _export_achievements_to_excel(self, achievements, file_path):
         """导出成就数据到Excel文件"""
-        import openpyxl
+        from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
         from openpyxl.utils import get_column_letter
         
-        wb = openpyxl.Workbook()
+        wb = Workbook()
         sheet = wb.active
         sheet.title = "成就数据"
         
