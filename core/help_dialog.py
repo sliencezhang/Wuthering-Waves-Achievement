@@ -69,13 +69,12 @@ class HelpDialog(QDialog):
             "这是一个帮你记录和管理《鸣潮》游戏成就进度的工具。你可以用它来：<br>"
             "• ✅ 标记已完成的成就，包括已完成、未完成、已占用(多选一成就)、暂不可获取(永远不会抽的角色的延奏成就或1.2追月节成就等等)<br>"
             "• 📊 查看成就完成进度统计图表<br>"
-            "• ❣️ 美化的软件界面，包含头像、立绘、背景图（使用需在下载页面下载resources.zip，并解压到该软件的同一文件夹内）<br>"
-            "• 👥 支持多个用户，每个用户可以独立记录自己的进度</p>"
+            "• 👥 支持多个用户，每个用户可以独立记录自己的进度<br>"
+            "• ❣️ 美化的软件界面，包含头像、立绘、背景图（使用需在下载页面下载resources.zip并解压，将文件夹(忽略json文件)复制到该软件的resources文件夹内）</p>"
             
-            "<p><b>1. 通用认证信息设置（新手必读）</b></p>"
-            "<p style='margin-left: 20px;'><span style='color: #e67e22;'><b>⚠️ 重要：</b></span>只有想获取最新成就数据时才需要设置这个！<br>"
-            "如果只是想使用现有的1.0-2.8版本成就数据，<b>完全可以跳过这一步</b>！<br><br>"
-            "<b>如何获取？</b><br>"
+            
+            "<p><b>1. 通用认证信息设置</b></p>"
+            "<p style='margin-left: 20px;'><b>如何获取？</b><br>"
             "① 访问库街区Wiki首页：<a href='https://www.kurobbs.com/' style='color: #3498db; text-decoration: underline;'>https://www.kurobbs.com/</a><br>"
             "② 选择鸣潮并登录后，按 <b>F12</b> 打开开发者工具（Developer Tools）<br>"
             "③ 切换到 <b>网络</b>（Network）标签, 刷新页面（F5 或 Ctrl+R）<br>"
@@ -157,7 +156,7 @@ class HelpDialog(QDialog):
             "<p style='margin-left: 20px;'><span style='color: #27ae60;'><b>🎉 总结：小白用户使用流程</b></span><br>"
             "1. 打开程序 → 直接开始使用内置的1.0-2.8成就数据<br>"
             "2. 在成就管理页面标记你的完成状态<br>"
-            "3. 游戏更新新版本时 → 等待别人整理好的Excel数据 → 数据爬取页面 → 导入Excel → 确认覆盖<br>"
+            "3. 游戏更新新版本时 → 等待别人整理好的Excel数据（按照范本格式自行整理） → 数据爬取页面 → 导入Excel → 确认覆盖<br>"
             "4. 完全不需要了解JSON，不需要设置认证信息，开箱即用！</p>"
         )
         help_text.setWordWrap(True)
