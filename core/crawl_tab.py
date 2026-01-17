@@ -577,6 +577,12 @@ class CrawlTab(QWidget):
         self.download_page_btn.setMaximumWidth(100)
         control_layout.addWidget(self.download_page_btn)
         
+        self.bilibili_up_btn = QPushButton("B站UP主")
+        self.bilibili_up_btn.setStyleSheet(get_button_style(config.theme))
+        self.bilibili_up_btn.clicked.connect(self.open_bilibili_up)
+        self.bilibili_up_btn.setMaximumWidth(100)
+        control_layout.addWidget(self.bilibili_up_btn)
+        
         self.export_template_btn = QPushButton("导出范本")
         self.export_template_btn.setStyleSheet(get_button_style(config.theme))
         self.export_template_btn.clicked.connect(self.export_excel_template)
@@ -636,6 +642,8 @@ class CrawlTab(QWidget):
             self.clear_cache_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'download_page_btn'):
             self.download_page_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'bilibili_up_btn'):
+            self.bilibili_up_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_template_btn'):
             self.export_template_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'import_excel_btn'):
@@ -1136,6 +1144,15 @@ class CrawlTab(QWidget):
             self.show_notification(f"打开页面失败，请手动访问\n下载链接: {download_url}\n下载密码: {download_password}")
         
         print(f"[INFO] 下载页面操作完成 - 页面打开: {page_opened}")
+    
+    def open_bilibili_up(self):
+        """打开B站UP主页面"""
+        import webbrowser
+        
+        bilibili_url = "https://space.bilibili.com/570235512/lists/6498390?type=season"
+        
+        # 打开B站UP主页面
+        webbrowser.open(bilibili_url)
     
     def clear_cache(self):
         """清除本地缓存的网页文件"""
@@ -1829,6 +1846,8 @@ class CrawlTab(QWidget):
             self.clear_cache_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'download_page_btn'):
             self.download_page_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'bilibili_up_btn'):
+            self.bilibili_up_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_template_btn'):
             self.export_template_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'import_excel_btn'):
