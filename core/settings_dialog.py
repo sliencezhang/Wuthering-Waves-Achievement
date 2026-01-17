@@ -393,10 +393,10 @@ class TemplateSettingsDialog(QDialog):
             "📖 <b>如何获取认证信息：</b><br>"
             "1. 访问库街区Wiki首页：<a href='https://wiki.kurobbs.com/mc/home' style='color: #0078d4;'>https://wiki.kurobbs.com/mc/home</a><br>"
             "2. 登录后，按 <b>F12</b> 打开开发者工具（Developer Tools）<br>"
-            "3. 刷新页面（F5 或 Ctrl+R）<br>"
-            "4. 切换到 <b>网络</b>（Network）标签<br>"
+            "3. 切换到 <b>网络</b>（Network）标签<br>"
+            "4. 刷新页面（F5 或 Ctrl+R）<br>"
             "5. 在请求列表中找到名称为 <b>getUserBons</b> 的请求<br>"
-            "6. 点击该请求，在右侧查看 <b>请求标头</b>（Request Headers）<br>"
+            "6. 点击该请求，在右侧切换到标头标签，滚动查看 <b>请求标头</b>（Request Headers）<br>"
             "7. 找到 <b>Devcode</b> 和 <b>Token</b> 字段，复制其值到下方输入框"
         )
         help_label.setWordWrap(True)
