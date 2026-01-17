@@ -546,7 +546,7 @@ class TemplateMainWindow(QMainWindow):
         """显示帮助对话框"""
         from core.help_dialog import HelpDialog
         help_dialog = HelpDialog(self)
-        help_dialog.exec()
+        help_dialog.show()
 
     def closeEvent(self, event):
             """窗口关闭事件"""

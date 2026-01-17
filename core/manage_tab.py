@@ -617,13 +617,13 @@ class ManageTab(QWidget):
         """打开设置对话框"""
         from core.settings_dialog import TemplateSettingsDialog
         dialog = TemplateSettingsDialog(self)
-        dialog.exec()
+        dialog.show()
     
     def open_help(self):
         """打开帮助对话框"""
         from core.help_dialog import HelpDialog
         dialog = HelpDialog(self)
-        dialog.exec()
+        dialog.show()
     
     def import_excel(self):
         """导入Excel文件"""
