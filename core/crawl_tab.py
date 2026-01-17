@@ -571,6 +571,12 @@ class CrawlTab(QWidget):
         self.clear_cache_btn.setMaximumWidth(100)
         control_layout.addWidget(self.clear_cache_btn)
         
+        self.download_page_btn = QPushButton("下载页面")
+        self.download_page_btn.setStyleSheet(get_button_style(config.theme))
+        self.download_page_btn.clicked.connect(self.open_download_page)
+        self.download_page_btn.setMaximumWidth(100)
+        control_layout.addWidget(self.download_page_btn)
+        
         self.export_template_btn = QPushButton("导出范本")
         self.export_template_btn.setStyleSheet(get_button_style(config.theme))
         self.export_template_btn.clicked.connect(self.export_excel_template)
@@ -628,6 +634,8 @@ class CrawlTab(QWidget):
             self.wiki_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'clear_cache_btn'):
             self.clear_cache_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'download_page_btn'):
+            self.download_page_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_template_btn'):
             self.export_template_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'import_excel_btn'):
@@ -1104,6 +1112,30 @@ class CrawlTab(QWidget):
         wiki_url = "https://wiki.kurobbs.com/mc/item/1220879855033786368?wkFrom=home&wkFromLabel=%E9%A6%96%E9%A1%B5%E5%BF%AB%E6%8D%B7%E5%AF%BC%E8%88%AA"
         webbrowser.open(wiki_url)
         print(f"[INFO] 已打开Wiki页面: {wiki_url}")
+    
+    def open_download_page(self):
+        """打开下载页面"""
+        import webbrowser
+        
+        # 从配置中获取下载链接和密码
+        download_url = config.update_download_url
+        download_password = config.update_download_password
+        
+        # 打开下载页面
+        try:
+            webbrowser.open(download_url)
+            page_opened = True
+        except Exception as e:
+            print(f"[ERROR] 打开下载页面失败: {str(e)}")
+            page_opened = False
+        
+        # 显示提示信息
+        if page_opened:
+            self.show_notification(f"已打开下载页面\n下载密码: {download_password}\n请在输入框中输入密码")
+        else:
+            self.show_notification(f"打开页面失败，请手动访问\n下载链接: {download_url}\n下载密码: {download_password}")
+        
+        print(f"[INFO] 下载页面操作完成 - 页面打开: {page_opened}")
     
     def clear_cache(self):
         """清除本地缓存的网页文件"""
@@ -1791,6 +1823,12 @@ class CrawlTab(QWidget):
             self.crawl_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'merge_btn'):
             self.merge_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'wiki_btn'):
+            self.wiki_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'clear_cache_btn'):
+            self.clear_cache_btn.setStyleSheet(get_button_style(theme))
+        if hasattr(self, 'download_page_btn'):
+            self.download_page_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'export_template_btn'):
             self.export_template_btn.setStyleSheet(get_button_style(theme))
         if hasattr(self, 'import_excel_btn'):
