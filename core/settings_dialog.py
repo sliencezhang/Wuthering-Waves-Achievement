@@ -200,32 +200,28 @@ class TemplateSettingsDialog(QDialog):
         version_group = QGroupBox("版本删除")
         version_layout = QVBoxLayout(version_group)
 
-        # 版本选择下拉框
-        version_select_layout = QHBoxLayout()
-        version_select_layout.addWidget(QLabel("选择版本:"))
+        # 版本选择和按钮布局（一行）
+        version_controls_layout = QHBoxLayout()
+        version_controls_layout.addWidget(QLabel("选择版本:"))
         self.version_combo = QComboBox()
         self.version_combo.setMinimumWidth(200)
-        version_select_layout.addWidget(self.version_combo)
-        version_select_layout.addStretch()
-        version_layout.addLayout(version_select_layout)
-
-        # 删除按钮
-        delete_layout = QHBoxLayout()
-        self.delete_version_btn = QPushButton("删除选定版本")
-        self.delete_version_btn.setStyleSheet(get_button_style(config.theme))
-        self.delete_version_btn.clicked.connect(self.delete_version_data)
-        delete_layout.addWidget(self.delete_version_btn)
-        delete_layout.addStretch()
-        version_layout.addLayout(delete_layout)
-
-        # 刷新版本列表按钮
-        refresh_layout = QHBoxLayout()
+        version_controls_layout.addWidget(self.version_combo)
+        
+        # 添加弹性空间
+        version_controls_layout.addStretch()
+        
+        # 三个按钮
         self.refresh_versions_btn = QPushButton("刷新版本列表")
         self.refresh_versions_btn.setStyleSheet(get_button_style(config.theme))
         self.refresh_versions_btn.clicked.connect(self.refresh_version_list)
-        refresh_layout.addWidget(self.refresh_versions_btn)
-        refresh_layout.addStretch()
-        version_layout.addLayout(refresh_layout)
+        version_controls_layout.addWidget(self.refresh_versions_btn)
+        
+        self.delete_version_btn = QPushButton("删除选定版本")
+        self.delete_version_btn.setStyleSheet(get_button_style(config.theme))
+        self.delete_version_btn.clicked.connect(self.delete_version_data)
+        version_controls_layout.addWidget(self.delete_version_btn)
+        
+        version_layout.addLayout(version_controls_layout)
 
         layout.addWidget(version_group)
         layout.addStretch()
@@ -1144,7 +1140,6 @@ class TemplateSettingsDialog(QDialog):
     
     def _add_achievement_group(self):
         """添加成就组"""
-        from core.custom_message_box import CustomMessageBox
         
         # 生成组ID和名称
         existing_groups = set()
@@ -1324,7 +1319,6 @@ class TemplateSettingsDialog(QDialog):
     
     def _add_achievements_to_group(self, group_id, achievements):
         """将成就添加到组中"""
-        from core.custom_message_box import CustomMessageBox
         
         print(f"[DEBUG] 开始添加 {len(achievements)} 个成就到组 {group_id}")
         
@@ -1821,7 +1815,7 @@ class TemplateSettingsDialog(QDialog):
             self, 
             "确认删除", 
             f"确定要删除版本 {selected_version} 的所有成就数据吗？\n\n"
-            f"删除前会自动导出当前所有成就数据作为备份。\n"
+            f"删除前会自动导出所有用户进度数据作为备份。\n"
             f"此操作不可恢复！",
             ("确定", "取消")
         )
@@ -1852,17 +1846,19 @@ class TemplateSettingsDialog(QDialog):
                 CustomMessageBox.information(self, "提示", f"没有找到版本 {selected_version} 的成就数据")
                 return
             
-            # 2. 导出要删除的版本数据
+            # 2. 导出要删除的版本数据和所有用户进度
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"版本{selected_version}_成就数据_{timestamp}.xlsx"
             
             # 获取exe同目录路径
             from core.config import get_resource_path
-            backup_path = get_resource_path("") / backup_filename
+            backup_dir = get_resource_path("")
             
-            # 调用导出Excel功能（只导出要删除的版本数据）
-            self._export_achievements_to_excel(to_delete_achievements, str(backup_path))
+            # 导出所有用户进度到一个Excel文件
+            users_backup_filename = f"版本{selected_version}_所有用户进度_{timestamp}.xlsx"
+            users_backup_path = backup_dir / users_backup_filename
+            self._export_all_users_progress_to_excel(to_delete_achievements, str(users_backup_path))
+            user_backup_files = [users_backup_filename]
             
             # 3. 删除指定版本的成就
             filtered_achievements = [ach for ach in all_achievements if ach.get('版本', '') != selected_version]
@@ -1882,8 +1878,13 @@ class TemplateSettingsDialog(QDialog):
             self.refresh_version_list()
             
             # 7. 显示成功消息
-            success_msg = f"成功删除版本 {selected_version} 的 {deleted_count} 条成就数据！\n"
-            success_msg += f"该版本数据已导出至：{backup_path}"
+            success_msg = f"成功删除版本 {selected_version} 的 {deleted_count} 条成就数据！\n\n"
+            success_msg += f"备份文件：\n"
+            if user_backup_files:
+                success_msg += f"• 用户进度（{len(user_backup_files)}个文件）：\n"
+                for file in user_backup_files:
+                    success_msg += f"  - {file}\n"
+                success_msg += f"\n注意：备份文件包含所有用户的工作表，工作表名为UID"
             CustomMessageBox.information(self, "删除成功", success_msg)
             
         except Exception as e:
@@ -1891,7 +1892,106 @@ class TemplateSettingsDialog(QDialog):
             CustomMessageBox.critical(self, "错误", error_msg)
             print(f"[ERROR] {error_msg}")
 
-    def _export_achievements_to_excel(self, achievements, file_path):
+    def _export_all_users_progress_to_excel(self, achievements, file_path):
+            """导出所有用户的进度数据到一个Excel文件的多个工作表"""
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+
+            wb = Workbook()
+            # 删除默认工作表
+            wb.remove(wb.active)
+
+            # 获取所有用户
+            users = config.get_users()
+
+            # 定义列顺序
+            column_order = [
+                '名称', '描述', '奖励', '版本', '是否隐藏', '第一分类', '第二分类', '获取状态'
+            ]
+
+            # 为每个用户创建工作表
+            for username in users.keys():
+                # 获取用户UID作为工作表名称
+                user_info = users.get(username, {})
+                uid = user_info.get('uid', username) if isinstance(user_info, dict) else username
+                sheet_name = str(uid)[:31]  # Excel工作表名称最大31个字符
+
+                # 创建工作表
+                sheet = wb.create_sheet(title=sheet_name)
+
+                # 写入表头
+                for col_idx, field_name in enumerate(column_order, 1):
+                    cell = sheet.cell(row=1, column=col_idx, value=field_name)
+                    cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                    cell.font = Font(color="FFFFFF", bold=True)
+                    cell.alignment = Alignment(horizontal="center")
+
+                # 加载用户进度数据
+                user_progress = config.load_user_progress(username)
+                if not user_progress:
+                    print(f"[INFO] 用户 {username} (UID: {uid}) 没有进度数据")
+                    user_progress = {}
+
+                # 写入数据
+                row = 2
+                for achievement in achievements:
+                    # 获取成就编号
+                    code = achievement.get('编号', '')
+
+                    # 创建行数据
+                    row_data = []
+                    for field_name in column_order[:-1]:  # 除了获取状态
+                        value = achievement.get(field_name, '')
+                        row_data.append(value)
+
+                    # 获取用户进度
+                    progress_info = user_progress.get(code, None)
+                    if progress_info and isinstance(progress_info, dict):
+                        status = progress_info.get('获取状态', '未完成')
+                    else:
+                        status = '未完成'
+
+                    row_data.append(status)
+
+                    # 写入行
+                    for col_idx, value in enumerate(row_data, 1):
+                        cell = sheet.cell(row=row, column=col_idx, value=value)
+
+                        # 设置边框
+                        thin_border = Border(
+                            left=Side(style='thin'),
+                            right=Side(style='thin'),
+                            top=Side(style='thin'),
+                            bottom=Side(style='thin')
+                        )
+                        cell.border = thin_border
+
+                        # 特殊处理名称列
+                        if col_idx == 1 and value:  # 第一列是名称
+                            cell.font = Font(bold=True)
+
+                            # 隐藏成就用橙色
+                            if achievement.get('是否隐藏') == '隐藏':
+                                cell.font = Font(bold=True, color="FFA500")
+
+                    row += 1
+
+                # 调整列宽
+                column_widths = {
+                    '名称': 25, '描述': 40, '版本': 10, '奖励': 15, '是否隐藏': 10,
+                    '第一分类': 15, '第二分类': 20, '获取状态': 10
+                }
+
+                for col_idx, field_name in enumerate(column_order, 1):
+                    col_letter = get_column_letter(col_idx)
+                    sheet.column_dimensions[col_letter].width = column_widths.get(field_name, 15)
+
+            # 保存文件
+            wb.save(file_path)
+            print(f"[SUCCESS] 所有用户的进度数据已导出到: {file_path}")
+
+    def _export_achievements_to_excel(self, achievements, file_path, include_status=True):
         """导出成就数据到Excel文件"""
         from openpyxl import Workbook
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -1903,8 +2003,10 @@ class TemplateSettingsDialog(QDialog):
         
         # 定义列顺序（与数据爬取导出保持一致）
         column_order = [
-            '名称', '描述', '奖励', '版本', '是否隐藏', '第一分类', '第二分类', '获取状态'
+            '名称', '描述', '奖励', '版本', '是否隐藏', '第一分类', '第二分类'
         ]
+        if include_status:
+            column_order.append('获取状态')
         
         # 写入表头
         for col_idx, field_name in enumerate(column_order, 1):
@@ -2004,7 +2106,6 @@ class AchievementSelectionDialog(QDialog):
     def _init_ui(self):
         """初始化UI"""
         from core.styles import get_text_input_style, get_label_style
-        from PySide6.QtWidgets import QCheckBox
         
         # 搜索框
         search_layout = QHBoxLayout()
